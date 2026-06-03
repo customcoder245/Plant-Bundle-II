@@ -1,0 +1,290 @@
+{% comment %}
+  Unified Plant + Pot Bundle Selector 
+  v4.0 - Advanced Bidirectional Size/Color Sync
+{% endcomment %}
+
+<div id="pot-bundle-root" 
+     class="pot-bundle-container" 
+     style="display:none;"
+     data-product-id="{{ product.id }}" 
+     data-app-url="https://plant-bundle-production.up.railway.app">
+  
+  <div id="pot-selection-ui" class="pot-selection-wrapper">
+    <!-- pot Color Header -->
+    <div class="pot-header">
+      <span class="pot-label">Pot Color</span>
+      <span class="pot-selected-name">— <span id="current-pot-name">Choose a color</span></span>
+    </div>
+
+    <!-- Swatches Container -->
+    <div class="pot-swatches-grid" id="pot-swatches-container">
+      <div class="pot-loading">Loading premium pots...</div>
+    </div>
+
+    <!-- No Pot Option (Premium Checkbox UI) -->
+    <div class="no-pot-section">
+      <label class="no-pot-checkbox-wrapper">
+        <input type="checkbox" id="no-pot-toggle" class="no-pot-input">
+        <div class="no-pot-card">
+          <img class="no-pot-icon" src="https://cdn.shopify.com/s/files/1/0968/5384/files/pot_with_X.png?v=1764059593" alt="No Pot" />
+          <div class="no-pot-content">
+            <span class="no-pot-title"><strong>NO POT OPTION</strong></span>
+            <span class="no-pot-discount">SAVE $10 – Shipped bare-root</span>
+          </div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Hidden input for Shopify Line Item Property -->
+  <input type="hidden" name="properties[Pot Color]" id="final-pot-property" value="">
+</div>
+
+<style>
+  :root {
+    --pot-primary: #8fb149;
+    --pot-border: #e8e8e1;
+    --pot-bg-light: #f9fbf2;
+    --pot-oos: #f4f4f4;
+  }
+
+  .pot-bundle-container { margin: 25px 0; font-family: 'Roboto', sans-serif; }
+  
+  .pot-header { margin-bottom: 12px; font-size: 16px; letter-spacing: 0.5px; }
+  .pot-label { font-weight: 800; text-transform: capitalize; }
+  .pot-selected-name { color: #333; font-weight: 600; }
+
+  .pot-swatches-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  
+  .pot-swatch-item { cursor: pointer; position: relative; transition: all 0.2s ease; border-radius: 6px; }
+  .pot-swatch-item:hover:not(.oos) { transform: translateY(-2px); }
+  
+  .pot-swatch-border {
+    width: 52px; height: 52px; border-radius: 6px; padding: 4px;
+    border: 1px solid var(--pot-border); display: flex; align-items: center; justify-content: center;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  
+  .pot-swatch-color { width: 100%; height: 100%; border-radius: 3px; }
+  .pot-swatch-item.active .pot-swatch-border { border: 2.5px solid #000; box-shadow: 0 0 0 1px #000; }
+
+  .pot-swatch-item.oos { cursor: not-allowed; opacity: 0.35; }
+  .pot-swatch-item.oos .pot-swatch-border { background: var(--pot-oos); border-style: dashed; }
+
+  /* No Pot Styling */
+  .no-pot-checkbox-wrapper { display: block; cursor: pointer; }
+  .no-pot-input { display: none; }
+  
+  .no-pot-card {
+    display: flex; align-items: center; gap: 15px; padding: 12px 18px;
+    border: 2px solid var(--pot-border); border-radius: 12px; transition: all 0.3s ease;
+    background: #fff;
+  }
+  
+  .no-pot-input:checked + .no-pot-card {
+    border-color: var(--pot-primary); background: var(--pot-bg-light);
+    box-shadow: 0 4px 15px rgba(143, 177, 73, 0.15);
+  }
+  
+  .no-pot-icon { width: 45px; height: 45px; object-fit: contain; }
+  .no-pot-title { font-size: 14px; display: block; }
+  .no-pot-discount { font-size: 13px; color: var(--pot-primary); font-weight: 800; }
+
+  .pot-loading { font-style: italic; color: #999; font-size: 13px; }
+</style>
+
+<script>
+(function() {
+  const root = document.getElementById('pot-bundle-root');
+  if (!root) return;
+
+  const appUrl = root.dataset.appUrl;
+  const productId = root.dataset.productId;
+  
+  const state = {
+    colors: [],
+    inventory: [],
+    config: null,
+    selectedColor: null,
+    images: [],
+    currentVariantId: null
+  };
+
+  async function init() {
+    try {
+      const [configRes, colorsRes, invRes] = await Promise.all([
+        fetch(`${appUrl}/api/product-config/${productId}`).then(r => r.json()),
+        fetch(`${appUrl}/api/pots/colors`).then(r => r.json()),
+        fetch(`${appUrl}/api/inventory`).then(r => r.json())
+      ]);
+
+      state.config = configRes;
+      state.colors = colorsRes;
+      state.inventory = invRes;
+
+      if (!state.config || !state.config.is_enabled) {
+        root.style.display = 'none';
+        return;
+      }
+      
+      root.style.display = 'block';
+
+      // Load product images for image swapping
+      const imgRes = await fetch(`${appUrl}/api/images/product/${state.config.id}`);
+      state.images = await imgRes.json();
+
+      ensureInputInForm();
+      setupListeners();
+      
+      // Initial render based on Shopify's pre-selected variant
+      handleVariantChange();
+    } catch (err) {
+      console.error("Pot Bundle Error:", err);
+    }
+  }
+
+  function ensureInputInForm() {
+    const mainForm = document.querySelector('form[action*="/cart/add"]');
+    const hiddenInput = document.getElementById('final-pot-property');
+    if (mainForm && hiddenInput && !mainForm.contains(hiddenInput)) {
+      mainForm.appendChild(hiddenInput);
+    }
+  }
+
+  function getPotSize() {
+    const variantId = document.querySelector('[name="id"]')?.value;
+    const mapping = state.config.size_mappings?.find(m => m.shopify_variant_id == variantId);
+    return mapping ? mapping.pot_size : 'Small'; 
+  }
+
+  /**
+   * handleVariantChange - Called whenever the Shopify user clicks a different size
+   */
+  function handleVariantChange() {
+    const newVariantId = document.querySelector('[name="id"]')?.value;
+    if (newVariantId === state.currentVariantId) return;
+    
+    state.currentVariantId = newVariantId;
+    const potSize = getPotSize();
+    
+    // Check if previously selected color is available in the NEW size
+    if (state.selectedColor) {
+        const colorObj = state.colors.find(c => c.name === state.selectedColor);
+        const inv = state.inventory.find(i => i.color_id === colorObj?.id && i.size === potSize);
+        if (!inv || inv.quantity <= 0) {
+            // Unselect if OOS in new size
+            state.selectedColor = null;
+            document.getElementById('current-pot-name').textContent = "Choose a color";
+            document.getElementById('final-pot-property').value = "";
+        }
+    }
+
+    render();
+  }
+
+  function render() {
+    const swatchesContainer = document.getElementById('pot-swatches-container');
+    const potSize = getPotSize();
+
+    swatchesContainer.innerHTML = state.colors.map(color => {
+      const inv = state.inventory.find(i => i.color_id === color.id && i.size === potSize);
+      const isStocked = inv && inv.quantity > 0;
+      const isActive = state.selectedColor === color.name;
+      
+      return `
+        <div class="pot-swatch-item ${isStocked ? '' : 'oos'} ${isActive ? 'active' : ''}" 
+             data-color-name="${color.name}" 
+             ${isStocked ? `onclick="handleSwatchClick(event, '${color.name}', '${potSize}')"` : ''}>
+          <div class="pot-swatch-border">
+            <div class="pot-swatch-color" style="background-color: ${color.hex_code}" title="${color.name} ${isStocked ? '' : '(Out of Stock)'}"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    // Update image if we have a selection
+    if (state.selectedColor) {
+        updateProductImage(state.selectedColor, potSize);
+    }
+  }
+
+  window.handleSwatchClick = (event, name, size) => {
+    state.selectedColor = name;
+    document.querySelectorAll('.pot-swatch-item').forEach(el => el.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    
+    document.getElementById('current-pot-name').textContent = name;
+    document.getElementById('final-pot-property').value = name;
+    document.getElementById('no-pot-toggle').checked = false;
+    
+    updateProductImage(name, size);
+  };
+
+  function updateProductImage(color, size) {
+    let match = state.images.find(i => i.color_name === color && i.size === size);
+    if (!match) match = state.images.find(i => i.color_name === color && i.size.toLowerCase() === 'all');
+
+    if (match) {
+      const selectors = ['.product__media img', '.product-featured-image', '.photos img', '.ProductCard img', '.product-single__photo'];
+      selectors.forEach(s => {
+          const img = document.querySelector(s);
+          if (img) img.src = match.image_url;
+      });
+    }
+  }
+
+  function setupListeners() {
+    // 1. Listen for No Pot Toggle
+    document.getElementById('no-pot-toggle').addEventListener('change', function(e) {
+      const propertyInput = document.getElementById('final-pot-property');
+      if (this.checked) {
+        state.selectedColor = null;
+        document.querySelectorAll('.pot-swatch-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('current-pot-name').textContent = "No Pot Selected";
+        propertyInput.value = "NO POT";
+        syncShopifyVariant(true);
+      } else {
+        propertyInput.value = "";
+        syncShopifyVariant(false);
+      }
+    });
+
+    // 2. Listen for Shopify Size Change (The Bidirectional Sync)
+    // Most themes use a change event on the hidden [name='id'] or variant selects
+    document.addEventListener('change', (e) => {
+      if (e.target.name === 'id' || e.target.classList.contains('single-option-selector')) {
+          setTimeout(handleVariantChange, 50); // Small delay to let Shopify update its DOM
+      }
+    });
+    
+    // Listen for Button-based swatches (some themes don't trigger 'change' on hidden inputs)
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.variant-input, .swatch-element')) {
+            setTimeout(handleVariantChange, 100);
+        }
+    });
+  }
+
+  function syncShopifyVariant(isNoPot) {
+    // Sync to radio buttons
+    const variantRadios = document.querySelectorAll('input[type="radio"]');
+    variantRadios.forEach(radio => {
+      const val = radio.value.toLowerCase();
+      if (isNoPot && val.includes('no pot')) radio.click();
+      if (!isNoPot && val.includes('with pot')) radio.click();
+    });
+
+    // Sync to dropdowns
+    const variantSelects = document.querySelectorAll('select.single-option-selector, .product-form__input select');
+    variantSelects.forEach(select => {
+      for (let option of select.options) {
+        const val = option.value.toLowerCase();
+        if (isNoPot && val.includes('no pot')) { select.value = option.value; select.dispatchEvent(new Event('change', {bubbles: true})); }
+        if (!isNoPot && val.includes('with pot')) { select.value = option.value; select.dispatchEvent(new Event('change', {bubbles: true})); }
+      }
+    });
+  }
+
+  init();
+})();
+</script>

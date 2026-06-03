@@ -1,0 +1,37 @@
+client_id = "966c98da8c1bdfd13d71f545ce855716"
+name = "Premium Plant Bundle Builder"
+application_url = "https://teens-teddy-survivor-reply.trycloudflare.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "testing-plant-bundle.myshopify.com"
+include_config_on_deploy = true
+
+[access_scopes]
+# Expanded scopes to allow the app to fully sync and generate products/variants and manage files
+scopes = "read_products,write_products,read_inventory,write_inventory,read_orders,read_content,write_content,read_files,write_files"
+
+[auth]
+redirect_urls = [
+  "https://teens-teddy-survivor-reply.trycloudflare.com/api/auth/callback"
+]
+
+[webhooks]
+api_version = "2024-01"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/cancelled" ]
+  uri = "/webhooks/orders/cancelled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products/delete"
+
+[pos]
+embedded = false
+

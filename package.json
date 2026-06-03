@@ -1,0 +1,33 @@
+{
+  "name": "plant-pot-bundle-app",
+  "version": "1.0.0",
+  "description": "Shopify app for selling plants with pots as bundled products",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "nodemon server/index.js",
+    "dev:client": "cd client && npm run dev",
+    "prebuild": "cd client && npm install",
+    "build": "cd client && npm run build",
+    "start": "node server/index.js",
+    "db:migrate": "node server/db/migrate.js",
+    "db:seed": "node server/db/seed.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@shopify/shopify-api": "^9.0.0",
+    "@shopify/shopify-app-express": "^4.0.0",
+    "@shopify/shopify-app-session-storage-postgresql": "^3.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^2.1.1",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  }
+}
