@@ -51,10 +51,53 @@ router.post('/', async (req, res) => {
         }
         await client.query('COMMIT');
 
-        // NEW: Add to Collection
         const collectionId = process.env.SHOPIFY_COLLECTION_ID || 320337641590;
         const shop = process.env.SHOPIFY_STORE_DOMAIN;
         const accessToken = process.env.ADMIN_API || process.env.SHOPIFY_ACCESS_TOKEN;
+
+        // Sync variant prices to Shopify if they have changed
+        if (accessToken && size_mappings && size_mappings.length > 0) {
+            try {
+                const shopifyProductRes = await fetch(`https://${shop}/admin/api/2023-10/products/${shopify_product_id}.json`, {
+                    headers: { 'X-Shopify-Access-Token': accessToken }
+                });
+                if (shopifyProductRes.ok) {
+                    const shopifyProductData = await shopifyProductRes.json();
+                    const shopifyVariants = shopifyProductData.product.variants || [];
+                    
+                    for (const mapping of size_mappings) {
+                        const shopifyVar = shopifyVariants.find(v => String(v.id) === String(mapping.shopify_variant_id));
+                        if (shopifyVar && mapping.price !== undefined) {
+                            const newPriceVal = parseFloat(mapping.price);
+                            const oldPriceVal = parseFloat(shopifyVar.price);
+                            if (!isNaN(newPriceVal) && !isNaN(oldPriceVal) && Math.abs(newPriceVal - oldPriceVal) > 0.001) {
+                                const newPriceStr = newPriceVal.toFixed(2);
+                                console.log(`Updating price for variant ${mapping.shopify_variant_id} from ${shopifyVar.price} to ${newPriceStr}`);
+                                const updateVarRes = await fetch(`https://${shop}/admin/api/2023-10/variants/${mapping.shopify_variant_id}.json`, {
+                                    method: 'PUT',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-Shopify-Access-Token': accessToken
+                                    },
+                                    body: JSON.stringify({
+                                        variant: {
+                                            id: mapping.shopify_variant_id,
+                                            price: newPriceStr
+                                        }
+                                    })
+                                });
+                                if (!updateVarRes.ok) {
+                                    console.error(`Failed to update price for variant ${mapping.shopify_variant_id}:`, await updateVarRes.text());
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to sync variant prices to Shopify:', err.message);
+            }
+        }
+
         if (accessToken) {
             try {
                 await fetch(`https://${shop}/admin/api/2023-10/collects.json`, {

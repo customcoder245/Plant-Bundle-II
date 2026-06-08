@@ -100,7 +100,8 @@ function ProductConfig() {
             return {
                 shopify_variant_id: v.id?.toString() || '',
                 variant_title: v.title || 'Unknown',
-                pot_size: predictedSize
+                pot_size: predictedSize,
+                price: v.price || '0.00'
             };
         });
 
@@ -108,6 +109,37 @@ function ProductConfig() {
             shopify_product_id: product.id.toString(),
             product_title: product.title,
             no_pot_discount: '10.00',
+            size_mappings: initialMappings
+        });
+        setModalOpen(true);
+    };
+
+    const handleEditConfigSelect = (config, shopifyProduct) => {
+        const initialMappings = (shopifyProduct?.variants || []).map(v => {
+            const existingMapping = (config.size_mappings || []).find(m => m.shopify_variant_id?.toString() === v.id?.toString());
+            
+            let predictedSize = 'Medium';
+            if (existingMapping) {
+                predictedSize = existingMapping.pot_size;
+            } else {
+                const title = (v.title || '').toLowerCase();
+                if (title.includes('2') || title.includes('small') || title.includes('4')) predictedSize = 'Small';
+                if (title.includes('6') || title.includes('standard')) predictedSize = 'Medium';
+                if (title.includes('8') || title.includes('10') || title.includes('large') || title.includes('gal')) predictedSize = 'Large';
+            }
+
+            return {
+                shopify_variant_id: v.id?.toString() || '',
+                variant_title: v.title || 'Unknown',
+                pot_size: predictedSize,
+                price: v.price || '0.00'
+            };
+        });
+
+        setFormData({
+            shopify_product_id: config.shopify_product_id.toString(),
+            product_title: config.product_title || shopifyProduct?.title || '',
+            no_pot_discount: config.no_pot_discount?.toString() || '10.00',
             size_mappings: initialMappings
         });
         setModalOpen(true);
@@ -262,7 +294,10 @@ function ProductConfig() {
 
                                         <InlineStack gap="200" blockAlign="center">
                                             {shopifyProduct && (
-                                                <Button size="slim" onClick={() => handleGenerateOpen(shopifyProduct)}>Insta-Build Variants</Button>
+                                                <>
+                                                    <Button size="slim" onClick={() => handleGenerateOpen(shopifyProduct)}>Insta-Build Variants</Button>
+                                                    <Button size="slim" variant="primary" onClick={() => handleEditConfigSelect(config, shopifyProduct)}>Edit Config</Button>
+                                                </>
                                             )}
 
                                             <Badge tone={config.is_enabled ? 'success' : 'attention'}>
@@ -426,21 +461,39 @@ function ProductConfig() {
                                             <Text fontWeight="bold" variant="bodySm">{mapping.variant_title}</Text>
                                             <Text tone="subdued" variant="bodyXs">SKU: {mapping.shopify_variant_id}</Text>
                                         </BlockStack>
-                                        <Select
-                                            label="Maps to size:"
-                                            options={[
-                                                { label: 'Small', value: 'Small' },
-                                                { label: 'Medium', value: 'Medium' },
-                                                { label: 'Large', value: 'Large' },
-                                                { label: 'Extra Large', value: 'Extra Large' }
-                                            ]}
-                                            value={mapping.pot_size}
-                                            onChange={(v) => {
-                                                const updated = [...formData.size_mappings];
-                                                updated[index].pot_size = v;
-                                                setFormData({ ...formData, size_mappings: updated });
-                                            }}
-                                        />
+                                        <InlineStack gap="300" align="stretch">
+                                            <div style={{ flex: 1.5 }}>
+                                                <Select
+                                                    label="Maps to size:"
+                                                    options={[
+                                                        { label: 'Small', value: 'Small' },
+                                                        { label: 'Medium', value: 'Medium' },
+                                                        { label: 'Large', value: 'Large' },
+                                                        { label: 'Extra Large', value: 'Extra Large' }
+                                                    ]}
+                                                    value={mapping.pot_size}
+                                                    onChange={(v) => {
+                                                        const updated = [...formData.size_mappings];
+                                                        updated[index].pot_size = v;
+                                                        setFormData({ ...formData, size_mappings: updated });
+                                                    }}
+                                                />
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <TextField
+                                                    label="Price:"
+                                                    value={mapping.price}
+                                                    onChange={(v) => {
+                                                        const updated = [...formData.size_mappings];
+                                                        updated[index].price = v;
+                                                        setFormData({ ...formData, size_mappings: updated });
+                                                    }}
+                                                    prefix="$"
+                                                    type="number"
+                                                    autoComplete="off"
+                                                />
+                                            </div>
+                                        </InlineStack>
                                     </BlockStack>
                                 </Box>
                             ))}
