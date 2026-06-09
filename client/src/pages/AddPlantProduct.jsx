@@ -845,6 +845,8 @@ function CreateNewProduct({ editId }) {
     const variantsRef = useRef(variants);
     // When true, the sync effect only ADDS new combos — never overwrites existing loaded data
     const variantsLockedRef = useRef(false);
+    // Track Shopify variant IDs that the user deleted, so we can remove them on save
+    const deletedVariantIdsRef = useRef([]);
     useEffect(() => {
         variantsRef.current = variants;
     }, [variants]);
@@ -1170,6 +1172,16 @@ function CreateNewProduct({ editId }) {
         }));
     };
 
+    // Delete a specific variant
+    const handleDeleteVariant = (variantTitle) => {
+        const variant = variants.find(v => v.title === variantTitle);
+        if (variant && variant.id) {
+            // Track Shopify variant ID for deletion on save
+            deletedVariantIdsRef.current.push(variant.id);
+        }
+        setVariants(prev => prev.filter(v => v.title !== variantTitle));
+    };
+
     // Bulk price update for grouped item rows
     const handleGroupPriceChange = (groupTitle, val) => {
         if (!val || isNaN(val)) return;
@@ -1249,7 +1261,8 @@ function CreateNewProduct({ editId }) {
                         weight: v.weight ? parseFloat(v.weight) : 0,
                         weight_unit: v.weight_unit || 'lb',
                         pot_size: v.pot_size
-                    }))
+                    })),
+                    deleted_variant_ids: deletedVariantIdsRef.current
                 })
             });
             const data = await res.json();
@@ -1545,11 +1558,19 @@ function CreateNewProduct({ editId }) {
                                                                 </div>
                                                             </td>
                                                             <td style={{ padding: '8px 16px', textAlign: 'center' }}>
-                                                                <Button
-                                                                    icon={EditIcon}
-                                                                    variant="plain"
-                                                                    onClick={() => setEditingVariantIndex(originalIndex)}
-                                                                />
+                                                                <InlineStack gap="100">
+                                                                    <Button
+                                                                        icon={EditIcon}
+                                                                        variant="plain"
+                                                                        onClick={() => setEditingVariantIndex(originalIndex)}
+                                                                    />
+                                                                    <Button
+                                                                        icon={DeleteIcon}
+                                                                        variant="plain"
+                                                                        tone="critical"
+                                                                        onClick={() => handleDeleteVariant(subItem.title)}
+                                                                    />
+                                                                </InlineStack>
                                                             </td>
                                                         </tr>
                                                     );

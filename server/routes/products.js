@@ -246,10 +246,32 @@ router.put('/:id', async (req, res) => {
         return res.status(500).json({ error: 'No access token found. Add SHOPIFY_ACCESS_TOKEN to .env' });
     }
 
-    const { title, description, status, product_type, vendor, tags, options, variants, no_pot_discount } = req.body;
+    const { title, description, status, product_type, vendor, tags, options, variants, no_pot_discount, deleted_variant_ids } = req.body;
 
     try {
         console.log(`Attempting to update product "${title}" (ID: ${id}) on ${shop}...`);
+
+        // Delete variants from Shopify that the user removed
+        if (deleted_variant_ids && Array.isArray(deleted_variant_ids) && deleted_variant_ids.length > 0) {
+            console.log(`Deleting ${deleted_variant_ids.length} variant(s) from Shopify...`);
+            for (const variantId of deleted_variant_ids) {
+                try {
+                    const delRes = await fetch(`https://${shop}/admin/api/2023-10/products/${id}/variants/${variantId}.json`, {
+                        method: 'DELETE',
+                        headers: { 'X-Shopify-Access-Token': accessToken }
+                    });
+                    if (delRes.ok) {
+                        console.log(`Deleted variant ${variantId} from Shopify`);
+                        // Also remove from size_mappings DB
+                        db.run(`DELETE FROM size_mappings WHERE shopify_variant_id = ?`, [String(variantId)]);
+                    } else {
+                        console.error(`Failed to delete variant ${variantId}:`, await delRes.text());
+                    }
+                } catch (delErr) {
+                    console.error(`Error deleting variant ${variantId}:`, delErr.message);
+                }
+            }
+        }
 
         const productPayload = {
             id,
