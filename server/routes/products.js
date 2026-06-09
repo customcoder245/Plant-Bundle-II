@@ -43,7 +43,7 @@ router.post('/create', async (req, res) => {
         return res.status(500).json({ error: 'No access token found. Add SHOPIFY_ACCESS_TOKEN to .env or log in through /api/auth.' });
     }
 
-    const { title, description, variants } = req.body;
+    const { title, description, variants, status, product_type, vendor, tags, no_pot_discount } = req.body;
 
     try {
         console.log(`Attempting to create product "${title}" on ${shop}...`);
@@ -51,6 +51,10 @@ router.post('/create', async (req, res) => {
         const productPayload = {
             title,
             body_html: description,
+            status: status || 'active',
+            product_type: product_type || '',
+            vendor: vendor || '',
+            tags: Array.isArray(tags) ? tags.join(', ') : tags || ''
         };
 
         // If multi-option product is sent from front-end
@@ -125,8 +129,8 @@ router.post('/create', async (req, res) => {
         try {
             await clientDb.query('BEGIN');
             const configResult = await clientDb.query(
-                `INSERT INTO product_pot_config (shopify_product_id, product_title, no_pot_discount) VALUES ($1, $2, 10.00) RETURNING *`,
-                [shopifyProductId, title]
+                `INSERT INTO product_pot_config (shopify_product_id, product_title, no_pot_discount) VALUES ($1, $2, $3) RETURNING *`,
+                [shopifyProductId, title, parseFloat(no_pot_discount) || 10.00]
             );
             const configId = configResult.rows[0].id;
 
@@ -156,6 +160,215 @@ router.post('/create', async (req, res) => {
         res.json({ success: true, product: shopifyProduct });
     } catch (error) {
         console.error('SERVER FATAL ERROR:', error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+// GET /api/products/:id - Get a single product from Shopify and its DB config
+router.get('/:id', async (req, res) => {
+    const shop = process.env.SHOPIFY_STORE_DOMAIN;
+    let accessToken = process.env.ADMIN_API || process.env.SHOPIFY_ACCESS_TOKEN;
+    const { id } = req.params;
+
+    // Session fallback for local dev
+    if (!accessToken) {
+        try {
+            const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop);
+            if (sessions && sessions.length > 0) {
+                accessToken = sessions[0].accessToken;
+                console.log("Using fallover OAuth session token for local development (single product fetch).");
+            }
+        } catch (e) {
+            console.error("Session lookup failed:", e.message);
+        }
+    }
+
+    if (!accessToken) {
+        return res.status(500).json({ error: 'No access token found. Add SHOPIFY_ACCESS_TOKEN to .env' });
+    }
+
+    try {
+        console.log(`Fetching product ${id} from Shopify...`);
+        const shopifyRes = await fetch(`https://${shop}/admin/api/2023-10/products/${id}.json`, {
+            headers: {
+                'X-Shopify-Access-Token': accessToken,
+            }
+        });
+
+        if (!shopifyRes.ok) {
+            const errText = await shopifyRes.text();
+            console.error(`Shopify product fetch rejected: ${errText}`);
+            return res.status(shopifyRes.status).json({ error: `Shopify error: ${errText}` });
+        }
+
+        const shopifyData = await shopifyRes.json();
+        const product = shopifyData.product;
+
+        // Fetch local db config
+        const dbRes = await pool.query(
+            `SELECT ppc.*,
+             json_agg(json_build_object('id', sm.id, 'shopify_variant_id', sm.shopify_variant_id, 'variant_title', sm.variant_title, 'pot_size', sm.pot_size)) FILTER (WHERE sm.id IS NOT NULL) as size_mappings
+             FROM product_pot_config ppc
+             LEFT JOIN size_mappings sm ON ppc.id = sm.product_config_id
+             WHERE ppc.shopify_product_id = $1
+             GROUP BY ppc.id`,
+            [id]
+        );
+
+        const config = dbRes.rows[0] || null;
+
+        res.json({ product, config });
+    } catch (error) {
+        console.error('SERVER FATAL ERROR IN GET /:id:', error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+// PUT /api/products/:id - Update product in Shopify and its DB config & size mappings
+router.put('/:id', async (req, res) => {
+    const shop = process.env.SHOPIFY_STORE_DOMAIN;
+    let accessToken = process.env.ADMIN_API || process.env.SHOPIFY_ACCESS_TOKEN;
+    const { id } = req.params;
+
+    if (!accessToken) {
+        try {
+            const sessions = await shopify.config.sessionStorage.findSessionsByShop(shop);
+            if (sessions && sessions.length > 0) {
+                accessToken = sessions[0].accessToken;
+                console.log("Using fallover OAuth session token for local development (product update).");
+            }
+        } catch (e) {
+            console.error("Session lookup failed:", e.message);
+        }
+    }
+
+    if (!accessToken) {
+        return res.status(500).json({ error: 'No access token found. Add SHOPIFY_ACCESS_TOKEN to .env' });
+    }
+
+    const { title, description, status, product_type, vendor, tags, options, variants, no_pot_discount } = req.body;
+
+    try {
+        console.log(`Attempting to update product "${title}" (ID: ${id}) on ${shop}...`);
+
+        const productPayload = {
+            id,
+            title,
+            body_html: description,
+            status: status || 'active',
+            product_type: product_type || '',
+            vendor: vendor || '',
+            tags: Array.isArray(tags) ? tags.join(', ') : tags || ''
+        };
+
+        if (options && options.length > 0) {
+            productPayload.options = options;
+            productPayload.variants = variants.map(v => ({
+                id: v.id ? Number(v.id) : undefined, // Include existing Shopify variant ID
+                option1: v.option1,
+                option2: v.option2,
+                option3: v.option3,
+                price: v.price,
+                compare_at_price: v.compare_at_price || null,
+                inventory_management: v.inventory_management || 'shopify',
+                inventory_quantity: parseInt(v.inventory_quantity) || 0,
+                sku: v.sku || undefined,
+                barcode: v.barcode || undefined,
+                weight: v.weight ? parseFloat(v.weight) : undefined,
+                weight_unit: v.weight_unit || 'lb'
+            }));
+        }
+
+        const shopifyRes = await fetch(`https://${shop}/admin/api/2023-10/products/${id}.json`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': accessToken,
+            },
+            body: JSON.stringify({
+                product: productPayload,
+            }),
+        });
+
+        if (!shopifyRes.ok) {
+            const errText = await shopifyRes.text();
+            console.error('Shopify API Error Response:', errText);
+            return res.status(shopifyRes.status).json({ error: `Shopify rejected update: ${errText}` });
+        }
+
+        const shopifyData = await shopifyRes.json();
+        const shopifyProduct = shopifyData.product;
+
+        // Sync to Collection (in case not already in collection)
+        const collectionId = process.env.SHOPIFY_COLLECTION_ID || 320337641590;
+        try {
+            await fetch(`https://${shop}/admin/api/2023-10/collects.json`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Shopify-Access-Token': accessToken,
+                },
+                body: JSON.stringify({
+                    collect: {
+                        collection_id: collectionId,
+                        product_id: id
+                    }
+                })
+            });
+        } catch (err) {
+            console.error('Failed to add to collection during update:', err.message);
+        }
+
+        // Save configuration to Database
+        const clientDb = await pool.connect();
+        try {
+            await clientDb.query('BEGIN');
+            const configResult = await clientDb.query(
+                `INSERT INTO product_pot_config (shopify_product_id, product_title, no_pot_discount) 
+                 VALUES ($1, $2, $3) 
+                 ON CONFLICT (shopify_product_id) 
+                 DO UPDATE SET product_title = EXCLUDED.product_title, no_pot_discount = EXCLUDED.no_pot_discount, updated_at = CURRENT_TIMESTAMP 
+                 RETURNING *`,
+                [id, title, parseFloat(no_pot_discount) || 10.00]
+            );
+            const configId = configResult.rows[0].id;
+
+            // Clear old size mappings
+            await clientDb.query('DELETE FROM size_mappings WHERE product_config_id = $1', [configId]);
+
+            // Re-insert mappings matching updated Shopify variants
+            if (shopifyProduct.variants && shopifyProduct.variants.length > 0) {
+                for (const shopifyVariant of shopifyProduct.variants) {
+                    // Find corresponding variant from payload to extract chosen pot size
+                    const match = variants.find(v => 
+                        (v.option1 || '').toLowerCase().trim() === (shopifyVariant.option1 || '').toLowerCase().trim() &&
+                        (v.option2 || '').toLowerCase().trim() === (shopifyVariant.option2 || '').toLowerCase().trim() &&
+                        (v.option3 || '').toLowerCase().trim() === (shopifyVariant.option3 || '').toLowerCase().trim()
+                    );
+                    const potSize = match ? match.pot_size : predictPotSize(shopifyVariant.option1 || shopifyVariant.title);
+
+                    await clientDb.query(
+                        `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) 
+                         VALUES ($1, $2, $3, $4)`,
+                        [configId, shopifyVariant.id, shopifyVariant.title, potSize]
+                    );
+                }
+            }
+
+            await clientDb.query('COMMIT');
+            console.log("Product successfully updated & configured in Database.");
+            await logActivity('PRODUCT_UPDATED', `Updated and configured product: ${title}`, { shopify_product_id: id });
+        } catch (e) {
+            await clientDb.query('ROLLBACK');
+            console.error("Database Update Error:", e.message);
+            throw e;
+        } finally {
+            clientDb.release();
+        }
+
+        res.json({ success: true, product: shopifyProduct });
+    } catch (error) {
+        console.error('SERVER FATAL ERROR IN PUT /:id:', error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });

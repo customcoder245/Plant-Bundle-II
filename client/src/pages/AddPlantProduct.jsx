@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
     Page, Layout, Card, FormLayout, TextField, Button,
     InlineStack, Select, BlockStack, Text, Box,
@@ -51,7 +52,7 @@ function MediaUploadCard({ imageUrl, onUpload }) {
 /* ─────────────────────────────────────────────────────────────
    SIDEBAR COMPONENT
    ───────────────────────────────────────────────────────────── */
-function Sidebar({ status, setStatus, organization, setOrganization, tags, setTags }) {
+function Sidebar({ status, setStatus, organization, setOrganization, tags, setTags, noPotDiscount, setNoPotDiscount }) {
     const [tagInput, setTagInput] = useState('');
 
     const handleAddTag = () => {
@@ -77,6 +78,23 @@ function Sidebar({ status, setStatus, organization, setOrganization, tags, setTa
                             ]}
                             value={status}
                             onChange={setStatus}
+                        />
+                    </BlockStack>
+                </Box>
+            </Card>
+
+            <Card>
+                <Box padding="400">
+                    <BlockStack gap="300">
+                        <Text variant="headingMd">Pot Configuration</Text>
+                        <TextField
+                            label="Bare-Root Discount"
+                            value={noPotDiscount}
+                            onChange={setNoPotDiscount}
+                            type="number"
+                            prefix="$"
+                            autoComplete="off"
+                            helpText="Discount applied when buyer chooses 'Without Pot'"
                         />
                     </BlockStack>
                 </Box>
@@ -803,12 +821,16 @@ function DetailedVariantDetailsEditor({
 /* ─────────────────────────────────────────────────────────────
    CREATE NEW PRODUCT (TAB 2)
    ───────────────────────────────────────────────────────────── */
-function CreateNewProduct() {
+function CreateNewProduct({ editId }) {
+    const navigate = useNavigate();
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [status, setStatus] = useState('active');
     const [organization, setOrganization] = useState({ type: '', vendor: '', collection: '' });
     const [tags, setTags] = useState([]);
+    const [noPotDiscount, setNoPotDiscount] = useState('10.00');
+    const [loading, setLoading] = useState(false);
+    const [isLoaded, setIsLoaded] = useState(false);
     
     // Multi-option configurations matching Image 1
     const [options, setOptions] = useState([
@@ -828,6 +850,129 @@ function CreateNewProduct() {
     // Group By dashboard setting (Image 1)
     const [groupBy, setGroupBy] = useState('Size');
     const [expandedGroups, setExpandedGroups] = useState(new Set());
+
+    // Fetch product details if editing
+    useEffect(() => {
+        if (editId) {
+            fetchProductDetails();
+        }
+    }, [editId]);
+
+    const predictPotSize = (optionValue) => {
+        const shop = (optionValue || '').toLowerCase().trim();
+        if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
+            return 'Small';
+        }
+        if (shop.includes('6"') || shop.includes('6 inch') || shop.includes('medium') || shop.includes('standard') || shop.includes('6')) {
+            return 'Medium';
+        }
+        if (shop.includes('8"') || shop.includes('10"') || shop.includes('8 inch') || shop.includes('10 inch') || shop.includes('large') || shop.includes('8') || shop.includes('10') || shop.includes('gal')) {
+            return 'Large';
+        }
+        if (shop.includes('12"') || shop.includes('14"') || shop.includes('12 inch') || shop.includes('xl') || shop.includes('extra-large') || shop.includes('extra large') || shop.includes('12') || shop.includes('14')) {
+            return 'Extra Large';
+        }
+        return 'Medium';
+    };
+
+    const fetchProductDetails = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/products/${editId}`);
+            if (!res.ok) throw new Error('Failed to fetch product details');
+            const data = await res.json();
+            const shopifyProduct = data.product;
+            const dbConfig = data.config;
+
+            setTitle(shopifyProduct.title || '');
+            setDescription(shopifyProduct.body_html || '');
+            setStatus(shopifyProduct.status || 'active');
+            setOrganization({
+                type: shopifyProduct.product_type || '',
+                vendor: shopifyProduct.vendor || '',
+                collection: dbConfig?.collection || ''
+            });
+            setTags(shopifyProduct.tags ? shopifyProduct.tags.split(',').map(t => t.trim()).filter(Boolean) : []);
+            
+            // Set options
+            if (shopifyProduct.options && shopifyProduct.options.length > 0) {
+                const realOptions = shopifyProduct.options.filter(o => o.name !== 'Title');
+                if (realOptions.length > 0) {
+                    setOptions(realOptions.map(o => ({
+                        name: o.name,
+                        values: o.values || []
+                    })));
+                } else {
+                    setOptions([]);
+                }
+            } else {
+                setOptions([]);
+            }
+
+            // Set variants
+            if (shopifyProduct.variants && shopifyProduct.variants.length > 0) {
+                setVariants(shopifyProduct.variants.map(v => {
+                    const mapping = dbConfig?.size_mappings?.find(m => String(m.shopify_variant_id) === String(v.id));
+                    const potSize = mapping ? mapping.pot_size : predictPotSize(v.option1 || v.title);
+
+                    return {
+                        id: v.id,
+                        option1: v.option1 || '',
+                        option2: v.option2 || '',
+                        option3: v.option3 || '',
+                        title: v.title || '',
+                        pot_size: potSize,
+                        price: v.price || '0.00',
+                        compare_at_price: v.compare_at_price || '',
+                        cost_per_item: v.cost_per_item || '4.87',
+                        charge_tax: v.taxable !== false,
+                        unit_price: v.unit_price || '',
+                        inventory_tracked: v.inventory_management === 'shopify',
+                        inventory_quantity: String(v.inventory_quantity || '0'),
+                        sku: v.sku || '',
+                        barcode: v.barcode || '',
+                        inventory_policy: v.inventory_policy || 'deny',
+                        physical_product: v.requires_shipping !== false,
+                        weight: String(v.weight || '1.0'),
+                        weight_unit: v.weight_unit || 'lb',
+                        package_type: v.package_type || 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
+                        country_of_origin: v.country_code_of_origin || '',
+                        hs_code: v.harmonized_system_code || '',
+                        metafields: v.metafields || {
+                            color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                            age_group: '', condition: '', gender: '', mpn: '',
+                            supplier: '', variant_title: '', pots: '', width: '', height: ''
+                        }
+                    };
+                }));
+            } else {
+                setVariants([]);
+            }
+
+            if (dbConfig) {
+                setNoPotDiscount(String(dbConfig.no_pot_discount || '10.00'));
+            }
+            setIsLoaded(true);
+        } catch (e) {
+            console.error('Fetch edit product error:', e);
+            setMsg({ text: `❌ ${e.message}`, type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <Box padding="800">
+                <div style={{ textAlign: 'center' }}>
+                    <Spinner size="large" />
+                    <Box marginTop="400">
+                        <Text tone="subdued">Loading product details…</Text>
+                    </Box>
+                </div>
+            </Box>
+        );
+    }
 
     // Generates combinations for the variants array
     const generateCombinations = (opts) => {
@@ -850,6 +995,7 @@ function CreateNewProduct() {
 
     // Keep variants synchronized to options
     useEffect(() => {
+        if (editId && !isLoaded) return;
         const combos = generateCombinations(options);
         const nextVariants = combos.map(combo => {
             const opt1 = combo[0]?.value || '';
@@ -917,7 +1063,7 @@ function CreateNewProduct() {
             };
         });
         setVariants(nextVariants);
-    }, [options]);
+    }, [options, isLoaded]);
 
     // Handle tag additions for Size/Color/NoPot option tags
     const handleAddValueTag = (optIndex, valueText) => {
@@ -1010,18 +1156,27 @@ function CreateNewProduct() {
         }));
     };
 
-    const handleCreate = async () => {
+    const handleSave = async () => {
         if (!title) { setMsg({ text: 'Product title is required.', type: 'error' }); return; }
         setSaving(true);
         try {
-            const res = await fetch('/api/products/create', {
-                method: 'POST',
+            const url = editId ? `/api/products/${editId}` : '/api/products/create';
+            const method = editId ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title,
                     description,
+                    status,
+                    product_type: organization.type,
+                    vendor: organization.vendor,
+                    tags,
+                    no_pot_discount: noPotDiscount,
                     options: options.map(o => ({ name: o.name, values: o.values })),
                     variants: variants.map(v => ({
+                        id: v.id,
                         option1: v.option1,
                         option2: v.option2,
                         option3: v.option3,
@@ -1039,15 +1194,22 @@ function CreateNewProduct() {
             });
             const data = await res.json();
             if (res.ok) {
-                setMsg({ text: `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`, type: 'success' });
-                // Reset form
-                setTitle('');
-                setDescription('');
-                setOptions([
-                    { name: 'Size', values: ['4" Pot', '6" Pot', '8" Pot'] },
-                    { name: 'Pot Color', values: ['White', 'Black', 'Teal', 'Light Green', 'Self Watering'] },
-                    { name: 'No Pot Option', values: ['With Pot', 'Without Pot'] }
-                ]);
+                setMsg({ 
+                    text: editId 
+                        ? `✅ "${title}" has been updated successfully!` 
+                        : `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`, 
+                    type: 'success' 
+                });
+                
+                if (!editId) {
+                    setTitle('');
+                    setDescription('');
+                    setOptions([
+                        { name: 'Size', values: ['4" Pot', '6" Pot', '8" Pot'] },
+                        { name: 'Pot Color', values: ['White', 'Black', 'Teal', 'Light Green', 'Self Watering'] },
+                        { name: 'No Pot Option', values: ['With Pot', 'Without Pot'] }
+                    ]);
+                }
             } else {
                 throw new Error(data.error);
             }
@@ -1350,6 +1512,8 @@ function CreateNewProduct() {
                         setOrganization={setOrganization}
                         tags={tags}
                         setTags={setTags}
+                        noPotDiscount={noPotDiscount}
+                        setNoPotDiscount={setNoPotDiscount}
                     />
                 </Layout.Section>
             </Layout>
@@ -1358,15 +1522,17 @@ function CreateNewProduct() {
 
             <Box paddingBlockEnd="800">
                 <InlineStack align="end" gap="400">
-                    <Button size="large">Discard</Button>
+                    <Button size="large" onClick={() => navigate('/products')}>
+                        {editId ? 'Back to Config' : 'Discard'}
+                    </Button>
                     <Button
                         variant="primary"
                         size="large"
                         loading={saving}
-                        onClick={handleCreate}
+                        onClick={handleSave}
                         icon={PlusIcon}
                     >
-                        Save & Create Product ({variants.length} Variants)
+                        {editId ? 'Save & Update Product' : `Save & Create Product (${variants.length} Variants)`}
                     </Button>
                 </InlineStack>
             </Box>
@@ -1378,31 +1544,44 @@ function CreateNewProduct() {
    MAIN COMPONENT PAGE
    ───────────────────────────────────────────────────────────── */
 function AddPlantProduct() {
-    const [selectedTab, setSelectedTab] = useState(1); // Default to brand new creation
+    const [searchParams] = useSearchParams();
+    const editId = searchParams.get('id');
+    const isEditMode = searchParams.get('edit') === 'true' && !!editId;
+
+    const [selectedTab, setSelectedTab] = useState(isEditMode ? 1 : 1);
 
     const tabs = [
         { id: 'pick-existing', content: 'Connect Existing', panelID: 'pick-panel' },
-        { id: 'create-new', content: 'Create Brand New', panelID: 'create-panel' },
+        { id: isEditMode ? 'edit-product' : 'create-new', content: isEditMode ? 'Edit Product' : 'Create Brand New', panelID: 'create-panel' },
     ];
+
+    const pageTitle = isEditMode ? 'Edit Plant Product' : (selectedTab === 1 ? 'Add New Plant' : 'Connect Shopify Product');
 
     return (
         <Page
-            backAction={{ content: 'Dashboard', url: '/' }}
-            title={selectedTab === 1 ? "Add New Plant" : "Connect Shopify Product"}
-            subtitle="Everything you need to sync your plants with the pot bundling system."
-            secondaryActions={[
+            backAction={{ content: isEditMode ? 'Product Config' : 'Dashboard', url: isEditMode ? '/products' : '/' }}
+            title={pageTitle}
+            subtitle={isEditMode ? 'Update this product and its pot bundle configuration.' : 'Everything you need to sync your plants with the pot bundling system.'}
+            secondaryActions={isEditMode ? [
+                { content: 'View in Shopify', icon: ViewIcon },
+            ] : [
                 { content: 'Duplicate', icon: DuplicateIcon },
                 { content: 'View', icon: ViewIcon },
                 { content: 'Share', icon: ShareIcon },
             ]}
         >
             <BlockStack gap="400">
-                <Card padding="0">
-                    <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab} />
-                </Card>
+                {!isEditMode && (
+                    <Card padding="0">
+                        <Tabs tabs={tabs} selected={selectedTab} onSelect={setSelectedTab} />
+                    </Card>
+                )}
 
                 <div style={{ marginTop: 8 }}>
-                    {selectedTab === 0 ? <PickFromShopify /> : <CreateNewProduct />}
+                    {!isEditMode && selectedTab === 0
+                        ? <PickFromShopify />
+                        : <CreateNewProduct editId={isEditMode ? editId : null} />
+                    }
                 </div>
             </BlockStack>
         </Page>

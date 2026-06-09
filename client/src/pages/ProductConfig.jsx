@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     Page, Layout, Card, ResourceList, ResourceItem, Text, Badge,
     Button, Modal, FormLayout, TextField, Select, BlockStack,
@@ -9,6 +10,7 @@ import { RefreshIcon, SearchIcon, SettingsIcon } from '@shopify/polaris-icons';
 import { Leaf } from 'lucide-react';
 
 function ProductConfig() {
+    const navigate = useNavigate();
     const [configs, setConfigs] = useState([]);
     const [shopifyProducts, setShopifyProducts] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -79,7 +81,7 @@ function ProductConfig() {
     };
 
     const handleDelete = async (id) => {
-        if (!confirm('This will disable the pot selector for customers. Continue?')) return;
+        if (!confirm('⚠️ This will permanently DELETE this product from Shopify AND remove its pot config. This action cannot be undone. Continue?')) return;
         setActionLoading(id);
         try {
             const res = await fetch(`/api/product-config/${id}`, { method: 'DELETE' });
@@ -114,35 +116,8 @@ function ProductConfig() {
         setModalOpen(true);
     };
 
-    const handleEditConfigSelect = (config, shopifyProduct) => {
-        const initialMappings = (shopifyProduct?.variants || []).map(v => {
-            const existingMapping = (config.size_mappings || []).find(m => m.shopify_variant_id?.toString() === v.id?.toString());
-            
-            let predictedSize = 'Medium';
-            if (existingMapping) {
-                predictedSize = existingMapping.pot_size;
-            } else {
-                const title = (v.title || '').toLowerCase();
-                if (title.includes('2') || title.includes('small') || title.includes('4')) predictedSize = 'Small';
-                if (title.includes('6') || title.includes('standard')) predictedSize = 'Medium';
-                if (title.includes('8') || title.includes('10') || title.includes('large') || title.includes('gal')) predictedSize = 'Large';
-            }
-
-            return {
-                shopify_variant_id: v.id?.toString() || '',
-                variant_title: v.title || 'Unknown',
-                pot_size: predictedSize,
-                price: v.price || '0.00'
-            };
-        });
-
-        setFormData({
-            shopify_product_id: config.shopify_product_id.toString(),
-            product_title: config.product_title || shopifyProduct?.title || '',
-            no_pot_discount: config.no_pot_discount?.toString() || '10.00',
-            size_mappings: initialMappings
-        });
-        setModalOpen(true);
+    const handleEditConfigSelect = (config) => {
+        navigate(`/add-product?edit=true&id=${config.shopify_product_id}`);
     };
 
     const handleSave = async () => {
@@ -296,9 +271,9 @@ function ProductConfig() {
                                             {shopifyProduct && (
                                                 <>
                                                     <Button size="slim" onClick={() => handleGenerateOpen(shopifyProduct)}>Insta-Build Variants</Button>
-                                                    <Button size="slim" variant="primary" onClick={() => handleEditConfigSelect(config, shopifyProduct)}>Edit Config</Button>
-                                                </>
+                                                </>                                            
                                             )}
+                                            <Button size="slim" variant="primary" onClick={() => handleEditConfigSelect(config)}>Edit Config</Button>
 
                                             <Badge tone={config.is_enabled ? 'success' : 'attention'}>
                                                 {config.is_enabled ? 'Live' : 'Hidden'}
