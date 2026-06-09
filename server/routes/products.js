@@ -299,42 +299,58 @@ router.put('/:id', async (req, res) => {
         const shopifyData = await shopifyRes.json();
         const shopifyProduct = shopifyData.product;
 
-        // Sync variant inventory levels to Shopify
+        // Explicitly update each variant's price + inventory in Shopify
         try {
             const { getShopifyLocationId } = require('../services/inventoryService');
             const locationId = await getShopifyLocationId(shop, accessToken);
-            if (locationId && shopifyProduct.variants && shopifyProduct.variants.length > 0 && Array.isArray(variants)) {
+
+            if (shopifyProduct.variants && shopifyProduct.variants.length > 0 && Array.isArray(variants)) {
                 for (const shopifyVariant of shopifyProduct.variants) {
-                    const match = variants.find(v => 
+                    // Find the matching variant from the payload by option values
+                    const match = variants.find(v =>
                         (v.option1 || '').toLowerCase().trim() === (shopifyVariant.option1 || '').toLowerCase().trim() &&
                         (v.option2 || '').toLowerCase().trim() === (shopifyVariant.option2 || '').toLowerCase().trim() &&
                         (v.option3 || '').toLowerCase().trim() === (shopifyVariant.option3 || '').toLowerCase().trim()
                     );
-                    if (match && match.inventory_quantity !== undefined) {
+
+                    if (!match) continue;
+
+                    // 1. Update price directly via variant API
+                    if (match.price !== undefined) {
+                        const newPrice = parseFloat(match.price);
+                        const oldPrice = parseFloat(shopifyVariant.price);
+                        if (!isNaN(newPrice) && (isNaN(oldPrice) || Math.abs(newPrice - oldPrice) > 0.001)) {
+                            console.log(`Updating price for variant ${shopifyVariant.id}: ${shopifyVariant.price} -> ${newPrice.toFixed(2)}`);
+                            const priceRes = await fetch(`https://${shop}/admin/api/2023-10/variants/${shopifyVariant.id}.json`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': accessToken },
+                                body: JSON.stringify({ variant: { id: shopifyVariant.id, price: newPrice.toFixed(2) } })
+                            });
+                            if (!priceRes.ok) console.error(`Price update failed for variant ${shopifyVariant.id}:`, await priceRes.text());
+                        }
+                    }
+
+                    // 2. Update inventory via inventory_levels/set.json
+                    if (locationId && match.inventory_quantity !== undefined) {
                         const targetQty = parseInt(match.inventory_quantity);
                         if (!isNaN(targetQty)) {
-                            console.log(`Setting inventory for variant ${shopifyVariant.id} (Item: ${shopifyVariant.inventory_item_id}) to ${targetQty} at location ${locationId}`);
+                            console.log(`Setting inventory for variant ${shopifyVariant.id} -> ${targetQty} at location ${locationId}`);
                             const invRes = await fetch(`https://${shop}/admin/api/2023-10/inventory_levels/set.json`, {
                                 method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Shopify-Access-Token': accessToken
-                                },
+                                headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': accessToken },
                                 body: JSON.stringify({
                                     location_id: locationId,
                                     inventory_item_id: shopifyVariant.inventory_item_id,
                                     available: targetQty
                                 })
                             });
-                            if (!invRes.ok) {
-                                console.error(`Failed to set inventory for variant ${shopifyVariant.id}:`, await invRes.text());
-                            }
+                            if (!invRes.ok) console.error(`Inventory update failed for variant ${shopifyVariant.id}:`, await invRes.text());
                         }
                     }
                 }
             }
         } catch (invErr) {
-            console.error('Failed to sync variant inventory levels:', invErr.message);
+            console.error('Failed to sync variant prices/inventory to Shopify:', invErr.message);
         }
 
         // Sync to Collection (in case not already in collection)

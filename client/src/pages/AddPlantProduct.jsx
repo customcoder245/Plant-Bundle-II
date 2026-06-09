@@ -1195,14 +1195,14 @@ function CreateNewProduct({ editId }) {
             });
             const data = await res.json();
             if (res.ok) {
-                setMsg({ 
-                    text: editId 
-                        ? `✅ "${title}" has been updated successfully!` 
-                        : `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`, 
-                    type: 'success' 
-                });
-                
-                if (!editId) {
+                if (editId) {
+                    // Navigate back to Product Config so it re-fetches live Shopify data
+                    navigate('/products');
+                } else {
+                    setMsg({ 
+                        text: `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`, 
+                        type: 'success' 
+                    });
                     setTitle('');
                     setDescription('');
                     setOptions([
