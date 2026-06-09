@@ -240,7 +240,7 @@ function ProductConfig() {
                             if (hasVariants) {
                                 shopifyProduct.variants.forEach(v => {
                                     const mapping = (config.size_mappings || []).find(m => m.shopify_variant_id?.toString() === v.id?.toString());
-                                    const sizeName = mapping ? mapping.pot_size : 'Unmapped';
+                                    const sizeName = v.option1 || (mapping ? mapping.pot_size : 'Unmapped');
                                     if (!groups[sizeName]) {
                                         groups[sizeName] = { variants: [], totalAvailable: 0, prices: [] };
                                     }

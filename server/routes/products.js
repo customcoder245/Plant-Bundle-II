@@ -137,9 +137,9 @@ router.post('/create', async (req, res) => {
             // Iterate over the created Shopify variants to save mappings
             for (let i = 0; i < shopifyProduct.variants.length; i++) {
                 const shopifyVariant = shopifyProduct.variants[i];
-                // Find matching input variant or fallback
                 const inputVariant = (req.body.variants && req.body.variants[i]) || {};
-                const potSize = inputVariant.pot_size || predictPotSize(shopifyVariant.option1 || shopifyVariant.title);
+                const rawPotSize = inputVariant.pot_size || shopifyVariant.option1 || shopifyVariant.title;
+                const potSize = predictPotSize(rawPotSize);
 
                 await clientDb.query(
                     `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) VALUES ($1, $2, $3, $4)`,
@@ -334,6 +334,22 @@ router.put('/:id', async (req, res) => {
                     if (locationId && match.inventory_quantity !== undefined) {
                         const targetQty = parseInt(match.inventory_quantity);
                         if (!isNaN(targetQty)) {
+                            // Ensure the inventory item is set to tracked: true on Shopify
+                            try {
+                                await fetch(`https://${shop}/admin/api/2023-10/inventory_items/${shopifyVariant.inventory_item_id}.json`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': accessToken },
+                                    body: JSON.stringify({
+                                        inventory_item: {
+                                            id: shopifyVariant.inventory_item_id,
+                                            tracked: true
+                                        }
+                                    })
+                                });
+                            } catch (trackErr) {
+                                console.error(`Failed to enable tracking for inventory item ${shopifyVariant.inventory_item_id}:`, trackErr.message);
+                            }
+
                             console.log(`Setting inventory for variant ${shopifyVariant.id} -> ${targetQty} at location ${locationId}`);
                             const invRes = await fetch(`https://${shop}/admin/api/2023-10/inventory_levels/set.json`, {
                                 method: 'POST',
@@ -399,7 +415,8 @@ router.put('/:id', async (req, res) => {
                         (v.option2 || '').toLowerCase().trim() === (shopifyVariant.option2 || '').toLowerCase().trim() &&
                         (v.option3 || '').toLowerCase().trim() === (shopifyVariant.option3 || '').toLowerCase().trim()
                     );
-                    const potSize = match ? match.pot_size : predictPotSize(shopifyVariant.option1 || shopifyVariant.title);
+                    const rawPotSize = match ? match.pot_size : (shopifyVariant.option1 || shopifyVariant.title);
+                    const potSize = predictPotSize(rawPotSize);
 
                     await clientDb.query(
                         `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) 

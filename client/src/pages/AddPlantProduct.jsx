@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
     Page, Layout, Card, FormLayout, TextField, Button,
@@ -842,6 +842,10 @@ function CreateNewProduct({ editId }) {
 
     // Combinations of options. 3 * 5 * 2 = 30 variants.
     const [variants, setVariants] = useState([]);
+    const variantsRef = useRef(variants);
+    useEffect(() => {
+        variantsRef.current = variants;
+    }, [variants]);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -889,7 +893,7 @@ function CreateNewProduct({ editId }) {
             const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
 
             // Find existing to preserve configurations
-            const existing = variants.find(v => v.title === key);
+            const existing = variantsRef.current.find(v => v.title === key);
             if (existing) return existing;
 
             // Generate beautifully realistic mock data mirroring screenshots
@@ -1106,9 +1110,16 @@ function CreateNewProduct({ editId }) {
         return Object.values(groups).map(g => {
             const minPrice = Math.min(...g.prices).toFixed(2);
             const maxPrice = Math.max(...g.prices).toFixed(2);
+
+            const qtys = g.items.map(v => parseInt(v.inventory_quantity) || 0);
+            const minQty = Math.min(...qtys);
+            const maxQty = Math.max(...qtys);
+            const qtyDisplay = minQty === maxQty ? `${minQty}` : `${minQty} - ${maxQty}`;
+
             return {
                 ...g,
                 priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
+                qtyDisplay: qtyDisplay,
                 available: g.totalInventory
             };
         });
@@ -1152,6 +1163,36 @@ function CreateNewProduct({ editId }) {
 
             if (matches) {
                 return { ...v, price: parseFloat(val).toFixed(2) };
+            }
+            return v;
+        }));
+    };
+
+    // Bulk availability/quantity update for grouped item rows
+    const handleGroupQtyChange = (groupTitle, val) => {
+        if (val === '') {
+            setVariants(prev => prev.map(v => {
+                let matches = false;
+                if (groupBy === 'Size' && v.option1 === groupTitle) matches = true;
+                else if (groupBy === 'Pot Color' && v.option2 === groupTitle) matches = true;
+                else if (groupBy === 'No Pot Option' && v.option3 === groupTitle) matches = true;
+
+                if (matches) {
+                    return { ...v, inventory_quantity: '' };
+                }
+                return v;
+            }));
+            return;
+        }
+        if (isNaN(val)) return;
+        setVariants(prev => prev.map(v => {
+            let matches = false;
+            if (groupBy === 'Size' && v.option1 === groupTitle) matches = true;
+            else if (groupBy === 'Pot Color' && v.option2 === groupTitle) matches = true;
+            else if (groupBy === 'No Pot Option' && v.option3 === groupTitle) matches = true;
+
+            if (matches) {
+                return { ...v, inventory_quantity: String(parseInt(val) || 0) };
             }
             return v;
         }));
@@ -1424,7 +1465,15 @@ function CreateNewProduct({ editId }) {
                                                         </div>
                                                     </td>
                                                     <td style={{ padding: '12px 16px' }}>
-                                                        <Text variant="bodyMd">{g.available}</Text>
+                                                        <div style={{ maxWidth: '100px' }}>
+                                                            <TextField
+                                                                label="Available Qty"
+                                                                labelHidden
+                                                                value={g.qtyDisplay}
+                                                                onChange={(val) => handleGroupQtyChange(g.title, val)}
+                                                                autoComplete="off"
+                                                            />
+                                                        </div>
                                                     </td>
                                                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                                         <Button
