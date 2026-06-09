@@ -843,6 +843,8 @@ function CreateNewProduct({ editId }) {
     // Combinations of options. 3 * 5 * 2 = 30 variants.
     const [variants, setVariants] = useState([]);
     const variantsRef = useRef(variants);
+    // When true, the sync effect only ADDS new combos — never overwrites existing loaded data
+    const variantsLockedRef = useRef(false);
     useEffect(() => {
         variantsRef.current = variants;
     }, [variants]);
@@ -884,71 +886,85 @@ function CreateNewProduct({ editId }) {
 
     // Keep variants synchronized to options
     useEffect(() => {
+        // In edit mode, wait until Shopify data has been fully loaded
         if (editId && !isLoaded) return;
+
         const combos = generateCombinations(options);
+
+        // If variants were loaded from Shopify, ONLY add brand-new combos — never overwrite
+        if (variantsLockedRef.current) {
+            const currentVariants = variantsRef.current;
+            const newCombos = combos.filter(combo => {
+                const key = [combo[0]?.value, combo[1]?.value, combo[2]?.value].filter(Boolean).join(' / ');
+                return !currentVariants.find(v => v.title === key);
+            });
+            if (newCombos.length === 0) return; // nothing new to add
+            // Add only the truly new combos with sensible defaults
+            const additions = newCombos.map(combo => {
+                const opt1 = combo[0]?.value || '';
+                const opt2 = combo[1]?.value || '';
+                const opt3 = combo[2]?.value || '';
+                const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
+                let basePrice = 29.49;
+                let baseQuantity = 0;
+                if (opt1.includes('6')) basePrice = 45.49;
+                else if (opt1.includes('8')) basePrice = 71.25;
+                if (opt2 === 'Self Watering') basePrice += 10.00;
+                else if (opt2 === 'Teal' || opt2 === 'Light Green') basePrice += 5.00;
+                if (opt3 === 'Without Pot') basePrice = Math.max(9.99, basePrice - 10.00);
+                return {
+                    option1: opt1, option2: opt2, option3: opt3,
+                    title: key, pot_size: opt1,
+                    price: basePrice.toFixed(2), compare_at_price: '',
+                    cost_per_item: '4.87', charge_tax: true, unit_price: '',
+                    inventory_tracked: true, inventory_quantity: String(baseQuantity),
+                    sku: '', barcode: '', inventory_policy: 'deny',
+                    physical_product: true, weight: '1.0', weight_unit: 'lb',
+                    package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
+                    country_of_origin: '', hs_code: '',
+                    metafields: { color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                        age_group: '', condition: '', gender: '', mpn: '',
+                        supplier: '', variant_title: '', pots: '', width: '', height: '' }
+                };
+            });
+            setVariants(prev => [...prev, ...additions]);
+            return;
+        }
+
+        // New product mode — generate all combos with realistic defaults
         const nextVariants = combos.map(combo => {
             const opt1 = combo[0]?.value || '';
             const opt2 = combo[1]?.value || '';
             const opt3 = combo[2]?.value || '';
             const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
 
-            // Find existing to preserve configurations
             const existing = variantsRef.current.find(v => v.title === key);
             if (existing) return existing;
 
-            // Generate beautifully realistic mock data mirroring screenshots
             let basePrice = 29.49;
             let baseQuantity = 36;
-            if (opt1.includes('6')) {
-                basePrice = 45.49;
-                baseQuantity = 27;
-            } else if (opt1.includes('8')) {
-                basePrice = 71.25;
-                baseQuantity = 77;
-            }
+            if (opt1.includes('6')) { basePrice = 45.49; baseQuantity = 27; }
+            else if (opt1.includes('8')) { basePrice = 71.25; baseQuantity = 77; }
 
-            // Adjust price slightly based on pot colors
-            if (opt2 === 'Self Watering') {
-                basePrice += 10.00;
-            } else if (opt2 === 'Teal' || opt2 === 'Light Green') {
-                basePrice += 5.00;
-            }
+            if (opt2 === 'Self Watering') basePrice += 10.00;
+            else if (opt2 === 'Teal' || opt2 === 'Light Green') basePrice += 5.00;
+            if (opt3 === 'Without Pot') basePrice = Math.max(9.99, basePrice - 10.00);
 
-            // Adjust price for no-pot discounts
-            if (opt3 === 'Without Pot') {
-                basePrice = Math.max(9.99, basePrice - 10.00);
-            }
-
-            // Stagger quantities slightly for realism
             const finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
 
             return {
-                option1: opt1,
-                option2: opt2,
-                option3: opt3,
-                title: key,
-                pot_size: opt1,
-                price: basePrice.toFixed(2),
-                compare_at_price: '',
-                cost_per_item: '4.87',
-                charge_tax: true,
-                unit_price: '',
-                inventory_tracked: true,
-                inventory_quantity: String(Math.max(0, finalQty)),
-                sku: '',
-                barcode: '',
-                inventory_policy: 'deny',
-                physical_product: true,
-                weight: '1.0',
-                weight_unit: 'lb',
+                option1: opt1, option2: opt2, option3: opt3,
+                title: key, pot_size: opt1,
+                price: basePrice.toFixed(2), compare_at_price: '',
+                cost_per_item: '4.87', charge_tax: true, unit_price: '',
+                inventory_tracked: true, inventory_quantity: String(Math.max(0, finalQty)),
+                sku: '', barcode: '', inventory_policy: 'deny',
+                physical_product: true, weight: '1.0', weight_unit: 'lb',
                 package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
-                country_of_origin: '',
-                hs_code: '',
-                metafields: {
-                    color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                country_of_origin: '', hs_code: '',
+                metafields: { color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
                     age_group: '', condition: '', gender: '', mpn: '',
-                    supplier: '', variant_title: '', pots: '', width: '', height: ''
-                }
+                    supplier: '', variant_title: '', pots: '', width: '', height: '' }
             };
         });
         setVariants(nextVariants);
@@ -1048,6 +1064,8 @@ function CreateNewProduct({ editId }) {
             if (dbConfig) {
                 setNoPotDiscount(String(dbConfig.no_pot_discount || '10.00'));
             }
+            // Lock variants BEFORE setting isLoaded so the sync effect can't overwrite them
+            variantsLockedRef.current = true;
             setIsLoaded(true);
         } catch (e) {
             console.error('Fetch edit product error:', e);
