@@ -381,4 +381,4 @@ async function syncPotsFromShopify() {
     };
 }
 
-module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify };
+module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify, getShopifyLocationId };

@@ -299,6 +299,44 @@ router.put('/:id', async (req, res) => {
         const shopifyData = await shopifyRes.json();
         const shopifyProduct = shopifyData.product;
 
+        // Sync variant inventory levels to Shopify
+        try {
+            const { getShopifyLocationId } = require('../services/inventoryService');
+            const locationId = await getShopifyLocationId(shop, accessToken);
+            if (locationId && shopifyProduct.variants && shopifyProduct.variants.length > 0 && Array.isArray(variants)) {
+                for (const shopifyVariant of shopifyProduct.variants) {
+                    const match = variants.find(v => 
+                        (v.option1 || '').toLowerCase().trim() === (shopifyVariant.option1 || '').toLowerCase().trim() &&
+                        (v.option2 || '').toLowerCase().trim() === (shopifyVariant.option2 || '').toLowerCase().trim() &&
+                        (v.option3 || '').toLowerCase().trim() === (shopifyVariant.option3 || '').toLowerCase().trim()
+                    );
+                    if (match && match.inventory_quantity !== undefined) {
+                        const targetQty = parseInt(match.inventory_quantity);
+                        if (!isNaN(targetQty)) {
+                            console.log(`Setting inventory for variant ${shopifyVariant.id} (Item: ${shopifyVariant.inventory_item_id}) to ${targetQty} at location ${locationId}`);
+                            const invRes = await fetch(`https://${shop}/admin/api/2023-10/inventory_levels/set.json`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Shopify-Access-Token': accessToken
+                                },
+                                body: JSON.stringify({
+                                    location_id: locationId,
+                                    inventory_item_id: shopifyVariant.inventory_item_id,
+                                    available: targetQty
+                                })
+                            });
+                            if (!invRes.ok) {
+                                console.error(`Failed to set inventory for variant ${shopifyVariant.id}:`, await invRes.text());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (invErr) {
+            console.error('Failed to sync variant inventory levels:', invErr.message);
+        }
+
         // Sync to Collection (in case not already in collection)
         const collectionId = process.env.SHOPIFY_COLLECTION_ID || 320337641590;
         try {
