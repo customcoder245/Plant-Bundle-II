@@ -311,8 +311,7 @@ function DetailedVariantDetailsEditor({
     onSaveVariant,
     onCancel
 }) {
-    const activeVariant = variants[editingIndex];
-    if (!activeVariant) return null;
+    const activeVariant = variants[editingIndex] || {};
 
     // Local form states
     const [price, setPrice] = useState(activeVariant.price || '29.49');
@@ -384,6 +383,8 @@ function DetailedVariantDetailsEditor({
             supplier: '', variant_title: '', pots: '', width: '', height: ''
         });
     }, [editingIndex, activeVariant]);
+
+    if (!variants[editingIndex]) return null;
 
     const handleMetafieldChange = (field, val) => {
         setMetafields({ ...metafields, [field]: val });
@@ -858,6 +859,97 @@ function CreateNewProduct({ editId }) {
         }
     }, [editId]);
 
+    // Generates combinations for the variants array
+    const generateCombinations = (opts) => {
+        if (opts.length === 0) return [];
+        const combos = [];
+        const recurse = (optIdx, currentCombo) => {
+            if (optIdx === opts.length) {
+                combos.push(currentCombo);
+                return;
+            }
+            const option = opts[optIdx];
+            const values = option.values.length > 0 ? option.values : ['Default'];
+            values.forEach(val => {
+                recurse(optIdx + 1, [...currentCombo, { name: option.name, value: val }]);
+            });
+        };
+        recurse(0, []);
+        return combos;
+    };
+
+    // Keep variants synchronized to options
+    useEffect(() => {
+        if (editId && !isLoaded) return;
+        const combos = generateCombinations(options);
+        const nextVariants = combos.map(combo => {
+            const opt1 = combo[0]?.value || '';
+            const opt2 = combo[1]?.value || '';
+            const opt3 = combo[2]?.value || '';
+            const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
+
+            // Find existing to preserve configurations
+            const existing = variants.find(v => v.title === key);
+            if (existing) return existing;
+
+            // Generate beautifully realistic mock data mirroring screenshots
+            let basePrice = 29.49;
+            let baseQuantity = 36;
+            if (opt1.includes('6')) {
+                basePrice = 45.49;
+                baseQuantity = 27;
+            } else if (opt1.includes('8')) {
+                basePrice = 71.25;
+                baseQuantity = 77;
+            }
+
+            // Adjust price slightly based on pot colors
+            if (opt2 === 'Self Watering') {
+                basePrice += 10.00;
+            } else if (opt2 === 'Teal' || opt2 === 'Light Green') {
+                basePrice += 5.00;
+            }
+
+            // Adjust price for no-pot discounts
+            if (opt3 === 'Without Pot') {
+                basePrice = Math.max(9.99, basePrice - 10.00);
+            }
+
+            // Stagger quantities slightly for realism
+            const finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
+
+            return {
+                option1: opt1,
+                option2: opt2,
+                option3: opt3,
+                title: key,
+                pot_size: opt1,
+                price: basePrice.toFixed(2),
+                compare_at_price: '',
+                cost_per_item: '4.87',
+                charge_tax: true,
+                unit_price: '',
+                inventory_tracked: true,
+                inventory_quantity: String(Math.max(0, finalQty)),
+                sku: '',
+                barcode: '',
+                inventory_policy: 'deny',
+                physical_product: true,
+                weight: '1.0',
+                weight_unit: 'lb',
+                package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
+                country_of_origin: '',
+                hs_code: '',
+                metafields: {
+                    color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                    age_group: '', condition: '', gender: '', mpn: '',
+                    supplier: '', variant_title: '', pots: '', width: '', height: ''
+                }
+            };
+        });
+        setVariants(nextVariants);
+    }, [options, isLoaded]);
+
     const predictPotSize = (optionValue) => {
         const shop = (optionValue || '').toLowerCase().trim();
         if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
@@ -973,97 +1065,6 @@ function CreateNewProduct({ editId }) {
             </Box>
         );
     }
-
-    // Generates combinations for the variants array
-    const generateCombinations = (opts) => {
-        if (opts.length === 0) return [];
-        const combos = [];
-        const recurse = (optIdx, currentCombo) => {
-            if (optIdx === opts.length) {
-                combos.push(currentCombo);
-                return;
-            }
-            const option = opts[optIdx];
-            const values = option.values.length > 0 ? option.values : ['Default'];
-            values.forEach(val => {
-                recurse(optIdx + 1, [...currentCombo, { name: option.name, value: val }]);
-            });
-        };
-        recurse(0, []);
-        return combos;
-    };
-
-    // Keep variants synchronized to options
-    useEffect(() => {
-        if (editId && !isLoaded) return;
-        const combos = generateCombinations(options);
-        const nextVariants = combos.map(combo => {
-            const opt1 = combo[0]?.value || '';
-            const opt2 = combo[1]?.value || '';
-            const opt3 = combo[2]?.value || '';
-            const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
-
-            // Find existing to preserve configurations
-            const existing = variants.find(v => v.title === key);
-            if (existing) return existing;
-
-            // Generate beautifully realistic mock data mirroring screenshots
-            let basePrice = 29.49;
-            let baseQuantity = 36;
-            if (opt1.includes('6')) {
-                basePrice = 45.49;
-                baseQuantity = 27;
-            } else if (opt1.includes('8')) {
-                basePrice = 71.25;
-                baseQuantity = 77;
-            }
-
-            // Adjust price slightly based on pot colors
-            if (opt2 === 'Self Watering') {
-                basePrice += 10.00;
-            } else if (opt2 === 'Teal' || opt2 === 'Light Green') {
-                basePrice += 5.00;
-            }
-
-            // Adjust price for no-pot discounts
-            if (opt3 === 'Without Pot') {
-                basePrice = Math.max(9.99, basePrice - 10.00);
-            }
-
-            // Stagger quantities slightly for realism
-            const finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
-
-            return {
-                option1: opt1,
-                option2: opt2,
-                option3: opt3,
-                title: key,
-                pot_size: opt1,
-                price: basePrice.toFixed(2),
-                compare_at_price: '',
-                cost_per_item: '4.87',
-                charge_tax: true,
-                unit_price: '',
-                inventory_tracked: true,
-                inventory_quantity: String(Math.max(0, finalQty)),
-                sku: '',
-                barcode: '',
-                inventory_policy: 'deny',
-                physical_product: true,
-                weight: '1.0',
-                weight_unit: 'lb',
-                package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
-                country_of_origin: '',
-                hs_code: '',
-                metafields: {
-                    color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
-                    age_group: '', condition: '', gender: '', mpn: '',
-                    supplier: '', variant_title: '', pots: '', width: '', height: ''
-                }
-            };
-        });
-        setVariants(nextVariants);
-    }, [options, isLoaded]);
 
     // Handle tag additions for Size/Color/NoPot option tags
     const handleAddValueTag = (optIndex, valueText) => {
