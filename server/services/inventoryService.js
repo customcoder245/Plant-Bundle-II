@@ -177,8 +177,20 @@ function normalize(text) {
     return t.trim();
 }
 
-function matchColor(colorName, text) {
-    return normalize(colorName) === normalize(text);
+function matchColor(colorName, text, colorType = '') {
+    const n1 = normalize(colorName);
+    const n2 = normalize(text);
+    const n3 = normalize(colorType);
+
+    // Exact match is best
+    if (n1 === n2 || (n3 && n3 === n2)) return true;
+
+    // Partial match (e.g. "Black" matches "Matte Black")
+    if (n1.length > 2 && n2.includes(n1)) return true;
+    if (n2.length > 2 && n1.includes(n2)) return true;
+    if (n3.length > 2 && n2.includes(n3)) return true;
+
+    return false;
 }
 
 function matchSize(dbSize, shopifyOptionValue) {
@@ -205,15 +217,26 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
     }
 
     try {
-        const colorRes = await pool.query('SELECT name FROM pot_colors WHERE id = $1', [potColorId]);
+        const colorRes = await pool.query('SELECT name, type FROM pot_colors WHERE id = $1', [potColorId]);
         if (colorRes.rows.length === 0) return;
-        const colorName = colorRes.rows[0].name;
+        const { name: colorName, type: colorType } = colorRes.rows[0];
 
         const locationId = await getShopifyLocationId(shop, token);
         if (!locationId) return;
 
-        const configsRes = await pool.query('SELECT id, shopify_product_id, product_title FROM product_pot_config WHERE is_enabled = true');
+        // Optimized: Only fetch configurations that actually use this pot size in their mappings
+        const configsRes = await pool.query(`
+            SELECT DISTINCT c.id, c.shopify_product_id, c.product_title 
+            FROM product_pot_config c
+            JOIN size_mappings sm ON c.id = sm.product_config_id
+            WHERE c.is_enabled = true AND sm.pot_size = $1
+        `, [size]);
+
         const configs = configsRes.rows;
+        if (configs.length === 0) {
+            console.log(`[SYNC] No active bundle products found using size "${size}".`);
+            return;
+        }
 
         for (const config of configs) {
             const mappingsRes = await pool.query(
@@ -221,7 +244,6 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 [config.id]
             );
             const mappings = mappingsRes.rows;
-            if (mappings.length === 0) continue;
 
             const shopifyRes = await fetch(`https://${shop}/admin/api/2023-10/products/${config.shopify_product_id}.json`, {
                 headers: { 'X-Shopify-Access-Token': token }
@@ -237,13 +259,13 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 const mapping = mappings.find(m => String(m.shopify_variant_id) === String(variant.id));
                 if (!mapping) continue;
 
-                // Robust Multi-Option Matching: Check all options and title for both color and size
-                const variantAttributes = [
-                    variant.option1,
-                    variant.option2,
-                    variant.option3,
-                    variant.title
-                ].filter(Boolean);
+                // Robust Multi-Option Matching: 
+                // We use options separately to avoid "4white" combined string issues.
+                const options = [variant.option1, variant.option2, variant.option3].filter(Boolean);
+
+                // Fallback: if options are generic (like "Default Title"), check the title parts
+                const titleParts = (variant.title || '').split('/').map(p => p.trim()).filter(Boolean);
+                const variantAttributes = [...new Set([...options, ...titleParts])];
 
                 const isSizeMatch = variantAttributes.some(attr =>
                     normalize(attr) === normalize(size) ||
@@ -253,7 +275,7 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 );
 
                 const isColorMatch = variantAttributes.some(attr =>
-                    matchColor(colorName, attr)
+                    matchColor(colorName, attr, colorType)
                 );
 
                 // EXCLUSION: If the variant is a "Without Pot" or "Bare Root" option, do NOT sync pot inventory to it.

@@ -456,6 +456,25 @@ router.put('/:id', async (req, res) => {
                          VALUES ($1, $2, $3, $4)`,
                         [configId, shopifyVariant.id, shopifyVariant.title, potSize]
                     );
+
+                    // Sync Shopify Inventory for this variant based on the NEW pot size
+                    try {
+                        const invService = require('../services/inventoryService');
+                        const potColorProperty = (shopifyVariant.option2 || shopifyVariant.option1 || '');
+                        // We need the color for matching
+                        const colorRes = await clientDb.query('SELECT id FROM pot_colors WHERE LOWER(name) = LOWER($1)', [potColorProperty]);
+                        if (colorRes.rows.length > 0) {
+                            const potColorId = colorRes.rows[0].id;
+                            const invRes = await clientDb.query('SELECT quantity FROM pot_inventory WHERE pot_color_id = $1 AND size = $2', [potColorId, potSize]);
+                            if (invRes.rows.length > 0) {
+                                const qty = invRes.rows[0].quantity;
+                                // Synchronously await to ensure consistency
+                                await invService.syncPotInventoryToShopify(potColorId, potSize, qty);
+                            }
+                        }
+                    } catch (syncErr) {
+                        console.error(`Post-mapping sync failed for variant ${shopifyVariant.id}:`, syncErr.message);
+                    }
                 }
             }
 

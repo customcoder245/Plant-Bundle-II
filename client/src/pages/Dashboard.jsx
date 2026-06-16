@@ -64,13 +64,18 @@ function Dashboard() {
 
             if (!inventoryRes.ok || !colorsRes.ok || !configRes.ok) throw new Error('API Error');
 
-            const inventory = await inventoryRes.json();
-            const colors = await colorsRes.json();
-            const configs = await configRes.json();
-            const activity = await activityRes.json();
+            const inventoryRaw = await inventoryRes.json();
+            const colorsRaw = await colorsRes.json();
+            const configsRaw = await configRes.json();
+            const activityRaw = await activityRes.json();
 
-            const lowStock = inventory.filter(i => i.is_low_stock).length;
-            const totalPots = inventory.reduce((sum, i) => sum + i.quantity, 0);
+            const inventory = Array.isArray(inventoryRaw) ? inventoryRaw : [];
+            const colors = Array.isArray(colorsRaw) ? colorsRaw : [];
+            const configs = Array.isArray(configsRaw) ? configsRaw : [];
+            const activity = Array.isArray(activityRaw) ? activityRaw : [];
+
+            const lowStock = inventory.filter(i => i && i.is_low_stock).length;
+            const totalPots = inventory.reduce((sum, i) => sum + (parseInt(i.quantity) || 0), 0);
 
             setStats({
                 totalColors: colors.length,

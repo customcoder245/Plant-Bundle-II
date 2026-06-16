@@ -1139,6 +1139,11 @@ function CreateNewProduct({ editId }) {
             const shopifyProduct = data.product;
             const dbConfig = data.config;
 
+            if (!shopifyProduct) {
+                setMsg({ text: 'No Shopify product found with this ID.', type: 'critical' });
+                return;
+            }
+
             setTitle(shopifyProduct.title || '');
             setDescription(shopifyProduct.body_html || '');
             setStatus(shopifyProduct.status || 'active');
@@ -1150,23 +1155,21 @@ function CreateNewProduct({ editId }) {
             setTags(shopifyProduct.tags ? shopifyProduct.tags.split(',').map(t => t.trim()).filter(Boolean) : []);
 
             // Set options
-            if (shopifyProduct.options && shopifyProduct.options.length > 0) {
-                const realOptions = shopifyProduct.options.filter(o => o.name !== 'Title');
-                if (realOptions.length > 0) {
-                    setOptions(realOptions.map(o => ({
-                        name: o.name,
-                        values: o.values || []
-                    })));
-                } else {
-                    setOptions([]);
-                }
+            const rawOptions = Array.isArray(shopifyProduct.options) ? shopifyProduct.options : [];
+            const filteredOptions = rawOptions.filter(o => o.name !== 'Title');
+            if (filteredOptions.length > 0) {
+                setOptions(filteredOptions.map(o => ({
+                    name: o.name,
+                    values: Array.isArray(o.values) ? o.values : []
+                })));
             } else {
                 setOptions([]);
             }
 
             // Set variants
-            if (shopifyProduct.variants && shopifyProduct.variants.length > 0) {
-                setVariants(shopifyProduct.variants.map(v => {
+            const rawVariants = Array.isArray(shopifyProduct.variants) ? shopifyProduct.variants : [];
+            if (rawVariants.length > 0) {
+                setVariants(rawVariants.map(v => {
                     const mapping = dbConfig?.size_mappings?.find(m => String(m.shopify_variant_id) === String(v.id));
                     const potSize = mapping ? mapping.pot_size : predictPotSize(v.option1 || v.title);
 
@@ -1323,14 +1326,20 @@ function CreateNewProduct({ editId }) {
             if (v.title === variantTitle) {
                 // If we are updating inventory and it's a "With Pot" variant linked to a physical pot,
                 // we trigger a global pot inventory update, which in turn updates ALL related products.
-                // We DEBOUNCE this sync to ensure the user can type freely without UI lockups.
-                if (field === 'inventory_quantity' && v.pot_id && v.option3 !== 'Without Pot') {
-                    const newQty = parseInt(val);
-                    if (!isNaN(newQty)) {
-                        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-                        syncTimerRef.current = setTimeout(() => {
-                            handlePotStockUpdate(v.pot_id, newQty);
-                        }, 1000); // 1 second debounce
+                if (field === 'inventory_quantity' && v.option3 !== 'Without Pot') {
+                    const potMatch = (potInventory || []).find(p =>
+                        normalize(p.size) === normalize(v.option1) &&
+                        normalize(p.color_name) === normalize(v.option2)
+                    );
+
+                    if (potMatch) {
+                        const newQty = parseInt(val);
+                        if (!isNaN(newQty)) {
+                            if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+                            syncTimerRef.current = setTimeout(() => {
+                                handlePotStockUpdate(potMatch.id, newQty);
+                            }, 1000); // 1 second debounce
+                        }
                     }
                 }
                 return { ...v, [field]: val };

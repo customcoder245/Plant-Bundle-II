@@ -313,7 +313,7 @@ function ProductConfig() {
                                                                 </div>
                                                                 <div>
                                                                     <Text variant="bodyMd" fontWeight="semibold">{size}</Text>
-                                                                    <Text tone="subdued" variant="bodySm">{data.variants.length} variant{data.variants.length > 1 ? 's' : ''}</Text>
+                                                                    <Text tone="subdued" variant="bodySm">{(data.variants || []).length} variant{(data.variants || []).length !== 1 ? 's' : ''}</Text>
                                                                 </div>
                                                             </div>
                                                             <div style={{ flex: 2 }}>
