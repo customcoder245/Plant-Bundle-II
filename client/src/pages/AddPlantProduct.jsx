@@ -657,10 +657,14 @@ function DetailedVariantDetailsEditor({
                                                         labelHidden
                                                         type="number"
                                                         value={g.available}
-                                                        disabled={!!g.potId}
-                                                        onChange={(value) => handleGroupQtyChange(g, value)}
+                                                        onChange={(value) => {
+                                                            if (g.potId) {
+                                                                handlePotStockUpdate(g.potId, value);
+                                                            } else {
+                                                                handleGroupQtyChange(g, value);
+                                                            }
+                                                        }}
                                                         autoComplete="off"
-                                                        suffix={g.potId ? <Tooltip content="Locked: Synced with Pot Inventory"><Icon source="LockFilledIcon" tone="subdued" /></Tooltip> : null}
                                                     />
                                                 </div>
                                             </div>
@@ -1222,6 +1226,8 @@ function CreateNewProduct({ editId }) {
         setOptions(next);
     };
 
+    const normalize = (text) => (text || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
     // Grouping calculations for the variants list view
     const getGroupedVariants = () => {
         const groups = {};
@@ -1242,8 +1248,8 @@ function CreateNewProduct({ editId }) {
                     // Only find pot stock if it's not an N/A color (case-insensitive)
                     if (opt2.toUpperCase() !== 'N/A') {
                         potData = potInventory.find(p =>
-                            (p.size || '').toLowerCase().trim() === opt1.toLowerCase().trim() &&
-                            (p.color_name || '').toLowerCase().trim() === opt2.toLowerCase().trim()
+                            normalize(p.size) === normalize(opt1) &&
+                            normalize(p.color_name) === normalize(opt2)
                         );
                     }
                 }
@@ -1415,8 +1421,9 @@ function CreateNewProduct({ editId }) {
                 // 2. Automatically update variant quantities to match new pot stock
                 const updatedQty = parseInt(newQty);
                 setVariants(prev => prev.map(v => {
-                    const isMatch = (v.option1 || '').trim().toLowerCase() === updatedInv.find(p => p.id === potId)?.size.toLowerCase().trim() &&
-                        (v.option2 || '').trim().toLowerCase() === updatedInv.find(p => p.id === potId)?.color_name.toLowerCase().trim();
+                    const pot = updatedInv.find(p => p.id === potId);
+                    const isMatch = normalize(v.option1) === normalize(pot?.size) &&
+                        normalize(v.option2) === normalize(pot?.color_name);
                     if (isMatch) {
                         return { ...v, inventory_quantity: updatedQty };
                     }
@@ -1676,37 +1683,32 @@ function CreateNewProduct({ editId }) {
                                         const isExpanded = expandedGroups.has(g.title);
                                         return (
                                             <React.Fragment key={g.title}>
-                                                <tr style={{ borderBottom: '1px solid #e1e3e5', background: isExpanded ? '#f9fafb' : '#ffffff' }}>
-                                                    <td style={{ padding: '12px 16px' }}><input type="checkbox" style={{ cursor: 'pointer' }} /></td>
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <InlineStack gap="300" blockAlign="center">
-                                                            <div style={{ width: '40px', height: '40px', background: '#f4f5f6', border: '1px solid #e1e3e5', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                                <tr
+                                                    key={g.title}
+                                                    style={{
+                                                        borderBottom: '1px solid #f1f2f3',
+                                                        background: expandedGroups.has(g.title) ? '#fafbfb' : 'white',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.2s ease'
+                                                    }}
+                                                    className="variant-row-hover"
+                                                    onClick={() => toggleGroupExpand(g.title)}
+                                                >
+                                                    <td style={{ padding: '14px 20px' }}>
+                                                        <InlineStack gap="400" blockAlign="center">
+                                                            <Checkbox
+                                                                checked={g.items.length > 0 && g.items.every(v => selectedVariants.includes(v.id || v.title))}
+                                                                onChange={() => handleSelectGroup(g)}
+                                                            />
+                                                            <div style={{ width: '44px', height: '44px', background: '#f4f5f6', border: '1px solid #e1e3e5', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)' }}>
                                                                 <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
                                                             <BlockStack gap="050">
-                                                                <Text variant="bodyMd" fontWeight="bold">{g.title}</Text>
-                                                                <InlineStack gap="200" blockAlign="center">
-                                                                    <Badge size="small" tone="info">{g.items.length} options</Badge>
-                                                                    {g.potId ? (
-                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f2f3', padding: '2px 8px', borderRadius: '12px' }}>
-                                                                            <Text variant="bodySm" tone="subdued">Stock:</Text>
-                                                                            <input
-                                                                                type="number"
-                                                                                value={g.potStock}
-                                                                                onChange={(e) => handlePotStockUpdate(g.potId, e.target.value)}
-                                                                                style={{
-                                                                                    border: 'none',
-                                                                                    background: 'transparent',
-                                                                                    fontSize: '12px',
-                                                                                    width: '40px',
-                                                                                    textAlign: 'center',
-                                                                                    fontWeight: 'bold',
-                                                                                    color: g.potStock < 10 ? '#d82c0d' : '#000'
-                                                                                }}
-                                                                            />
-                                                                        </div>
-                                                                    ) : g.title.includes('/') && !g.title.includes('N/A') ? (
-                                                                        <Badge size="small" tone="warning">No Pot Linked</Badge>
+                                                                <Text variant="bodyMd" fontWeight="bold" tone="base">{g.title}</Text>
+                                                                <InlineStack gap="150" blockAlign="center">
+                                                                    <Badge size="small" tone="info" progress="complete">{g.items.length} Variants</Badge>
+                                                                    {!g.potId && g.title.includes('/') && !normalize(g.title).includes('na') ? (
+                                                                        <Badge size="small" tone="warning" progress="incomplete">No Stock Link</Badge>
                                                                     ) : null}
                                                                 </InlineStack>
                                                             </BlockStack>
