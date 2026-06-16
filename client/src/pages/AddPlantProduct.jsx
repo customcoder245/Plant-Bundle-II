@@ -1240,74 +1240,51 @@ function CreateNewProduct({ editId }) {
 
     const normalize = (text) => (text || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
-    // Grouping calculations for the variants list view
+    // Grouping calculations for the variants list view — two-level: Size → Color
     const getGroupedVariants = () => {
-        const groups = {};
+        // 1. Group by Size first
+        const sizeGroups = {};
         variants.forEach(v => {
-            const opt1 = (v.option1 || '').trim();
-            const opt2 = (v.option2 || '').trim();
-            const opt3 = (v.option3 || '').trim();
-
-            let key = opt1; // Size
-            if (groupBy === 'Pot Color') key = opt2;
-            else if (groupBy === 'No Pot Option') key = opt3;
-            else if (groupBy === 'Size / Pot Color') key = `${opt1} / ${opt2}`;
-
-            if (!groups[key]) {
-                // Find physical pot inventory for this group based on current grouping
-                let potDataSum = 0;
-                let foundMatch = false;
-
-                if (groupBy === 'Size') {
-                    // Sum of all colors for this size
-                    const matches = potInventory.filter(p => normalize(p.size) === normalize(opt1));
-                    if (matches.length > 0) {
-                        potDataSum = matches.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0);
-                        foundMatch = true;
-                    }
-                } else if (groupBy === 'Size / Pot Color') {
-                    // Specific color stock
-                    if (opt2.toUpperCase() !== 'N/A') {
-                        const match = potInventory.find(p =>
-                            normalize(p.size) === normalize(opt1) &&
-                            normalize(p.color_name) === normalize(opt2)
-                        );
-                        if (match) {
-                            potDataSum = parseInt(match.quantity) || 0;
-                            foundMatch = true;
-                        }
-                    }
-                }
-
-                groups[key] = {
-                    title: key,
-                    items: [],
-                    prices: [],
-                    totalInventory: 0,
-                    isSynced: foundMatch,
-                    potStock: potDataSum
-                };
+            const size = (v.option1 || '').trim();
+            if (!sizeGroups[size]) {
+                sizeGroups[size] = { title: size, variants: [], colors: {} };
             }
-            groups[key].items.push(v);
-            groups[key].prices.push(parseFloat(v.price) || 0);
-            groups[key].totalInventory += parseInt(v.inventory_quantity) || 0;
+            sizeGroups[size].variants.push(v);
         });
 
-        return Object.values(groups).map(g => {
-            const minPrice = Math.min(...g.prices).toFixed(2);
-            const maxPrice = Math.max(...g.prices).toFixed(2);
+        // 2. Inside each size, group by Color and link to pot inventory
+        return Object.values(sizeGroups).map(s => {
+            s.variants.forEach(v => {
+                const color = (v.option2 || '').trim();
 
-            const qtys = g.items.map(v => parseInt(v.inventory_quantity) || 0);
-            const minQty = Math.min(...qtys);
-            const maxQty = Math.max(...qtys);
-            const qtyDisplay = minQty === maxQty ? `${minQty}` : `${minQty} - ${maxQty}`;
+                if (!s.colors[color]) {
+                    const potMatch = potInventory.find(p =>
+                        normalize(p.size) === normalize(s.title) &&
+                        normalize(p.color_name) === normalize(color)
+                    );
+
+                    s.colors[color] = {
+                        name: color,
+                        potStock: potMatch ? (parseInt(potMatch.quantity) || 0) : 0,
+                        potId: potMatch?.id,
+                        isSynced: !!potMatch,
+                        items: [],
+                        totalShopifyInv: 0
+                    };
+                }
+                s.colors[color].items.push(v);
+                s.colors[color].totalShopifyInv += (parseInt(v.inventory_quantity) || 0);
+            });
+
+            const colorList = Object.values(s.colors);
+            const totalPotStock = colorList.reduce((sum, c) => sum + c.potStock, 0);
 
             return {
-                ...g,
-                priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
-                qtyDisplay: qtyDisplay,
-                // If synced with pots, use potStock, otherwise use Shopify inventory total
-                available: g.isSynced ? g.potStock : g.totalInventory
+                title: s.title,
+                items: s.variants,
+                available: totalPotStock,
+                subGroups: colorList,
+                qtyDisplay: `${totalPotStock}`
             };
         });
     };
@@ -1724,40 +1701,24 @@ function CreateNewProduct({ editId }) {
                                                                 onChange={() => handleSelectGroup(g)}
                                                             />
                                                             <div style={{ width: '40px', height: '40px', background: '#fcfcfc', border: '1px solid #e8e9ea', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                                                <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
+                                                                <Icon source={DuplicateIcon} tone="subdued" />
                                                             </div>
                                                             <BlockStack gap="050">
-                                                                <Text variant="bodyMd" fontWeight="bold">{g.title}</Text>
-                                                                <Text variant="bodyXs" tone="subdued">{g.items.length} Variants</Text>
+                                                                <Text variant="bodyMd" fontWeight="bold">Size: {g.title}</Text>
+                                                                <Text variant="bodyXs" tone="subdued">{g.subGroups.length} Colors • {g.items.length} Variants</Text>
                                                             </BlockStack>
                                                         </InlineStack>
                                                     </td>
                                                     <td style={{ padding: '12px 16px' }}>
-                                                        <div style={{ maxWidth: '180px' }}>
-                                                            <TextField
-                                                                label="Price Display"
-                                                                labelHidden
-                                                                prefix="$"
-                                                                value={g.priceDisplay.replace('$ ', '')}
-                                                                onChange={(val) => handleGroupPriceChange(g.title, val)}
-                                                                autoComplete="off"
-                                                            />
-                                                        </div>
+                                                        {/* Price hidden for size header as it's a range */}
                                                     </td>
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <div style={{ maxWidth: '100px' }}>
                                                             <TextField
-                                                                label="Available Qty"
+                                                                label="Total Available"
                                                                 labelHidden
-                                                                type="number"
                                                                 value={g.available}
-                                                                onChange={(val) => {
-                                                                    if (g.potId) {
-                                                                        handlePotStockUpdate(g.potId, val);
-                                                                    } else {
-                                                                        handleGroupQtyChange(g.title, val);
-                                                                    }
-                                                                }}
+                                                                disabled
                                                                 autoComplete="off"
                                                             />
                                                         </div>
@@ -1771,66 +1732,84 @@ function CreateNewProduct({ editId }) {
                                                     </td>
                                                 </tr>
 
-                                                {/* Expanded Individual Rows */}
-                                                {isExpanded && g.items.map(subItem => {
-                                                    const originalIndex = variants.findIndex(val => val.title === subItem.title);
-                                                    return (
-                                                        <tr key={subItem.title} style={{ borderBottom: '1px solid #f1f2f3', background: '#fdfdfd' }}>
-                                                            <td style={{ padding: '8px 16px 8px 36px' }}><input type="checkbox" style={{ cursor: 'pointer' }} /></td>
-                                                            <td style={{ padding: '8px 16px' }}>
+                                                {/* Expanded Color Sub-Groups */}
+                                                {isExpanded && g.subGroups.map(colorGroup => (
+                                                    <React.Fragment key={colorGroup.name}>
+                                                        <tr style={{ borderBottom: '1px solid #f1f2f3', background: '#f9fafb' }}>
+                                                            <td style={{ padding: '8px 16px 8px 48px' }}>
                                                                 <InlineStack gap="200" blockAlign="center">
-                                                                    <div style={{ width: '28px', height: '28px', background: '#fcfcfc', border: '1px solid #e8e9ea', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                        <Icon source={ImageIcon} tone="subdued" />
+                                                                    <div style={{ width: '32px', height: '32px', background: '#fff', border: '1px solid #e1e3e5', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                        <div style={{ width: '20px', height: '20px', borderRadius: '2px', background: colorGroup.name.toLowerCase(), border: '1px solid #eee' }} />
                                                                     </div>
-                                                                    <BlockStack gap="0">
-                                                                        <Text variant="bodySm">{subItem.title}</Text>
-                                                                    </BlockStack>
+                                                                    <Text variant="bodySm" fontWeight="bold">{colorGroup.name}</Text>
                                                                 </InlineStack>
                                                             </td>
+                                                            <td style={{ padding: '8px 16px' }}></td>
                                                             <td style={{ padding: '8px 16px' }}>
-                                                                <div style={{ maxWidth: '100px' }}>
+                                                                <div style={{ maxWidth: '90px' }}>
                                                                     <TextField
-                                                                        label="price"
-                                                                        labelHidden
-                                                                        prefix="$"
-                                                                        value={subItem.price}
-                                                                        onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'price', val)}
-                                                                        autoComplete="off"
-                                                                        size="slim"
-                                                                    />
-                                                                </div>
-                                                            </td>
-                                                            <td style={{ padding: '8px 16px' }}>
-                                                                <div style={{ maxWidth: '80px' }}>
-                                                                    <TextField
-                                                                        label="qty"
+                                                                        label="Pot Stock"
                                                                         labelHidden
                                                                         type="number"
-                                                                        value={subItem.inventory_quantity}
-                                                                        onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
+                                                                        value={colorGroup.potStock}
+                                                                        onChange={(val) => {
+                                                                            if (colorGroup.potId) {
+                                                                                handlePotStockUpdate(colorGroup.potId, val);
+                                                                            }
+                                                                        }}
                                                                         autoComplete="off"
                                                                         size="slim"
                                                                     />
                                                                 </div>
                                                             </td>
-                                                            <td style={{ padding: '8px 16px', textAlign: 'center' }}>
-                                                                <InlineStack gap="100">
-                                                                    <Button
-                                                                        icon={EditIcon}
-                                                                        variant="plain"
-                                                                        onClick={() => setEditingVariantIndex(originalIndex)}
-                                                                    />
+                                                            <td></td>
+                                                        </tr>
+
+                                                        {/* Individual Variants for this Color */}
+                                                        {colorGroup.items.map(subItem => (
+                                                            <tr key={subItem.title} style={{ borderBottom: '1px solid #f9fafb', background: '#fff' }}>
+                                                                <td style={{ padding: '6px 16px 6px 80px' }}>
+                                                                    <Text variant="bodyXs" tone="subdued">{subItem.title.split(' / ').pop()}</Text>
+                                                                </td>
+                                                                <td style={{ padding: '6px 16px' }}>
+                                                                    <div style={{ maxWidth: '100px' }}>
+                                                                        <TextField
+                                                                            label="price"
+                                                                            labelHidden
+                                                                            prefix="$"
+                                                                            value={subItem.price}
+                                                                            onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'price', val)}
+                                                                            autoComplete="off"
+                                                                            size="slim"
+                                                                        />
+                                                                    </div>
+                                                                </td>
+                                                                <td style={{ padding: '6px 16px' }}>
+                                                                    <div style={{ maxWidth: '80px' }}>
+                                                                        <TextField
+                                                                            label="qty"
+                                                                            labelHidden
+                                                                            type="number"
+                                                                            value={subItem.inventory_quantity}
+                                                                            disabled={colorGroup.isSynced}
+                                                                            onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
+                                                                            autoComplete="off"
+                                                                            size="slim"
+                                                                        />
+                                                                    </div>
+                                                                </td>
+                                                                <td style={{ textAlign: 'right', paddingRight: '16px' }}>
                                                                     <Button
                                                                         icon={DeleteIcon}
                                                                         variant="plain"
                                                                         tone="critical"
                                                                         onClick={() => handleDeleteVariant(subItem.title)}
                                                                     />
-                                                                </InlineStack>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </React.Fragment>
+                                                ))}
                                             </React.Fragment>
                                         );
                                     })}
