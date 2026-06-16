@@ -848,6 +848,7 @@ function CreateNewProduct({ editId }) {
     // Combinations of options. 3 * 5 * 2 = 30 variants.
     const [variants, setVariants] = useState([]);
     const variantsRef = useRef(variants);
+    const variantsSectionRef = useRef(null);
     // When true, the sync effect only ADDS new combos — never overwrites existing loaded data
     const variantsLockedRef = useRef(false);
     // Track Shopify variant IDs that the user deleted, so we can remove them on save
@@ -1074,6 +1075,17 @@ function CreateNewProduct({ editId }) {
         setVariants(nextVariants);
     }, [options, isLoaded, inventoryLoaded]);
 
+    // Scroll to variants section when new variants are added
+    useEffect(() => {
+        if (variants.length > 0 && variantsSectionRef.current) {
+            const hasNewAdditions = variants.length > variantsRef.current.length;
+            if (hasNewAdditions && !isLoaded) {
+                variantsSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+        variantsRef.current = variants;
+    }, [variants.length]);
+
     const predictPotSize = (optionValue) => {
         const shop = (optionValue || '').toLowerCase().trim();
         if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
@@ -1219,16 +1231,14 @@ function CreateNewProduct({ editId }) {
 
             if (!groups[key]) {
                 // Find physical pot inventory for this group if possible
-                let potStock = null;
+                let potData = null;
                 if (groupBy === 'Size / Pot Color') {
                     // Only find pot stock if it's not an N/A color
                     if (v.option2 !== 'N/A') {
-                        potStock = potInventory.find(p =>
+                        potData = potInventory.find(p =>
                             p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
                             p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
-                        )?.quantity;
-                    } else {
-                        potStock = null; // No pot involved
+                        );
                     }
                 }
 
@@ -1237,7 +1247,8 @@ function CreateNewProduct({ editId }) {
                     items: [],
                     prices: [],
                     totalInventory: 0,
-                    potStock: potStock
+                    potId: potData?.id,
+                    potStock: potData?.quantity
                 };
             }
             groups[key].items.push(v);
@@ -1254,15 +1265,8 @@ function CreateNewProduct({ editId }) {
             const maxQty = Math.max(...qtys);
             const qtyDisplay = minQty === maxQty ? `${minQty}` : `${minQty} - ${maxQty}`;
 
-            // If we have specific pot stock, add it to the display
-            let displayTitle = g.title;
-            if (g.potStock !== null && g.potStock !== undefined) {
-                displayTitle = `${g.title} (${g.potStock} Pots In Stock)`;
-            }
-
             return {
                 ...g,
-                displayTitle,
                 priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
                 qtyDisplay: qtyDisplay,
                 available: g.totalInventory
@@ -1383,6 +1387,29 @@ function CreateNewProduct({ editId }) {
         if (anyCapped) {
             setMsg({ text: 'Some quantities were capped based on individual pot availability.', type: 'info' });
             setTimeout(() => setMsg({ text: '', type: '' }), 4000);
+        }
+    };
+
+    // Live sync for physical pot stock
+    const handlePotStockUpdate = async (potId, newQty) => {
+        if (!potId || newQty === '') return;
+        try {
+            const res = await fetch(`/api/inventory/${potId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity: parseInt(newQty) })
+            });
+
+            if (res.ok) {
+                // Refresh local pot inventory state
+                const updatedInv = potInventory.map(p => p.id === potId ? { ...p, quantity: parseInt(newQty) } : p);
+                setPotInventory(updatedInv);
+                setMsg({ text: 'Pot inventory updated and synced successfully.', type: 'success' });
+                setTimeout(() => setMsg({ text: '', type: '' }), 3000);
+            }
+        } catch (err) {
+            console.error('Failed to update pot inventory:', err);
+            setMsg({ text: 'Failed to sync pot inventory.', type: 'critical' });
         }
     };
 
@@ -1527,6 +1554,7 @@ function CreateNewProduct({ editId }) {
 
                         {/* Shopify Multi-Option Variants Config Panel (Image 1) */}
                         <Card padding="0">
+                            <div ref={variantsSectionRef} />
                             <Box padding="400">
                                 <BlockStack gap="400">
                                     <InlineStack align="space-between" blockAlign="center">
@@ -1637,8 +1665,38 @@ function CreateNewProduct({ editId }) {
                                                                 <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
                                                             <BlockStack gap="0">
-                                                                <Text variant="bodyMd" fontWeight="semibold">{g.displayTitle}</Text>
-                                                                <Text variant="bodySm" tone="subdued">{g.items.length} variants</Text>
+                                                                <Text variant="bodyMd" fontWeight="semibold">{g.title}</Text>
+                                                                <InlineStack gap="100" blockAlign="center">
+                                                                    <Text variant="bodySm" tone="subdued">{g.items.length} variants</Text>
+                                                                    {g.potId ? (
+                                                                        <>
+                                                                            <Divider vertical />
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                <Text variant="bodySm" tone="subdued">Pots in stock:</Text>
+                                                                                <div style={{ width: '60px' }}>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        value={g.potStock}
+                                                                                        onChange={(e) => handlePotStockUpdate(g.potId, e.target.value)}
+                                                                                        style={{
+                                                                                            padding: '2px 6px',
+                                                                                            fontSize: '12px',
+                                                                                            border: '1px solid #c4cdd5',
+                                                                                            borderRadius: '4px',
+                                                                                            width: '100%',
+                                                                                            textAlign: 'center'
+                                                                                        }}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        </>
+                                                                    ) : g.title.includes('/') && !g.title.includes('N/A') ? (
+                                                                        <>
+                                                                            <Divider vertical />
+                                                                            <Badge tone="attention">New Combination - No Pot Record</Badge>
+                                                                        </>
+                                                                    ) : null}
+                                                                </InlineStack>
                                                             </BlockStack>
                                                         </InlineStack>
                                                     </td>
