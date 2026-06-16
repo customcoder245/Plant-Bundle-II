@@ -13,22 +13,7 @@ function normalize(text) {
     return t.trim();
 }
 
-function predictPotSize(optionValue) {
-    const shop = (optionValue || '').toLowerCase().trim();
-    if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
-        return 'Small';
-    }
-    if (shop.includes('6"') || shop.includes('6 inch') || shop.includes('medium') || shop.includes('standard') || shop.includes('6')) {
-        return 'Medium';
-    }
-    if (shop.includes('8"') || shop.includes('10"') || shop.includes('8 inch') || shop.includes('10 inch') || shop.includes('large') || shop.includes('8') || shop.includes('10') || shop.includes('gal')) {
-        return 'Large';
-    }
-    if (shop.includes('12"') || shop.includes('14"') || shop.includes('12 inch') || shop.includes('xl') || shop.includes('extra-large') || shop.includes('extra large') || shop.includes('12') || shop.includes('14')) {
-        return 'Extra Large';
-    }
-    return 'Medium';
-}
+const { predictPotSize, syncPotInventoryToShopify } = require('../services/inventoryService');
 
 // POST /api/products/create - Create a new plant product in Shopify and configure it
 router.post('/create', async (req, res) => {
@@ -155,6 +140,22 @@ router.post('/create', async (req, res) => {
                     `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) VALUES ($1, $2, $3, $4)`,
                     [configId, shopifyVariant.id, shopifyVariant.title, potSize]
                 );
+
+                // --- NEW: Sync Inventory Immediately for New Product ---
+                try {
+                    const potColorProperty = (shopifyVariant.option2 || shopifyVariant.option1 || '');
+                    const colorRes = await clientDb.query('SELECT id FROM pot_colors WHERE LOWER(name) = LOWER($1)', [potColorProperty]);
+                    if (colorRes.rows.length > 0) {
+                        const potColorId = colorRes.rows[0].id;
+                        const invRes = await clientDb.query('SELECT quantity FROM pot_inventory WHERE pot_color_id = $1 AND size = $2', [potColorId, potSize]);
+                        if (invRes.rows.length > 0) {
+                            const qty = invRes.rows[0].quantity;
+                            await syncPotInventoryToShopify(potColorId, potSize, qty);
+                        }
+                    }
+                } catch (syncErr) {
+                    console.error(`Post-creation inventory sync failed for variant ${shopifyVariant.id}:`, syncErr.message);
+                }
             }
             await clientDb.query('COMMIT');
             console.log("Product successfully configured in Database.");
@@ -465,11 +466,11 @@ router.put('/:id', async (req, res) => {
                         const colorRes = await clientDb.query('SELECT id FROM pot_colors WHERE LOWER(name) = LOWER($1)', [potColorProperty]);
                         if (colorRes.rows.length > 0) {
                             const potColorId = colorRes.rows[0].id;
-                            const invRes = await clientDb.query('SELECT quantity FROM pot_inventory WHERE pot_color_id = $1 AND size = $2', [potColorId, potSize]);
+                            const invRes = await clientDb.query('SELECT quantity FROM pot_inventory WHERE pot_color_id = $1 AND (size = $2 OR size = $3)', [potColorId, potSize, predictPotSize(potSize)]);
                             if (invRes.rows.length > 0) {
                                 const qty = invRes.rows[0].quantity;
                                 // Synchronously await to ensure consistency
-                                await invService.syncPotInventoryToShopify(potColorId, potSize, qty);
+                                await syncPotInventoryToShopify(potColorId, potSize, qty);
                             }
                         }
                     } catch (syncErr) {
@@ -729,6 +730,22 @@ router.post('/:id/generate-variants', async (req, res) => {
                         `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) VALUES ($1, $2, $3, $4)`,
                         [configId, v.id, v.title, potSize]
                     );
+
+                    // --- NEW: Sync Inventory Immediately for Generated Product ---
+                    try {
+                        const potColorProperty = (v.option2 || v.option1 || '');
+                        const colorRes = await clientDb.query('SELECT id FROM pot_colors WHERE LOWER(name) = LOWER($1)', [potColorProperty]);
+                        if (colorRes.rows.length > 0) {
+                            const potColorId = colorRes.rows[0].id;
+                            const invRes = await clientDb.query('SELECT quantity FROM pot_inventory WHERE pot_color_id = $1 AND size = $2', [potColorId, potSize]);
+                            if (invRes.rows.length > 0) {
+                                const qty = invRes.rows[0].quantity;
+                                await syncPotInventoryToShopify(potColorId, potSize, qty);
+                            }
+                        }
+                    } catch (syncErr) {
+                        console.error(`Post-gen inventory sync failed for variant ${v.id}:`, syncErr.message);
+                    }
                 }
             }
             await clientDb.query('COMMIT');

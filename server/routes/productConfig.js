@@ -64,7 +64,7 @@ router.post('/', async (req, res) => {
                 if (shopifyProductRes.ok) {
                     const shopifyProductData = await shopifyProductRes.json();
                     const shopifyVariants = shopifyProductData.product.variants || [];
-                    
+
                     for (const mapping of size_mappings) {
                         const shopifyVar = shopifyVariants.find(v => String(v.id) === String(mapping.shopify_variant_id));
                         if (shopifyVar && mapping.price !== undefined) {
@@ -115,6 +115,29 @@ router.post('/', async (req, res) => {
                 });
             } catch (err) {
                 console.error('Failed to add existing product to collection:', err.message);
+            }
+
+            // --- SYNC INVENTORY IMMEDIATELY ---
+            try {
+                const invService = require('../services/inventoryService');
+                const potsRes = await client.query(`
+                    SELECT pi.pot_color_id, pi.size, pi.quantity 
+                    FROM pot_inventory pi 
+                    JOIN pot_colors pc ON pi.pot_color_id = pc.id 
+                    WHERE pc.is_active = true
+                `);
+
+                // For each mapped variant, sync the corresponding pot stock
+                // This is slightly heavy but ensures the new product is immediately accurate
+                for (const pot of potsRes.rows) {
+                    // Check if this pot size is used in our size_mappings
+                    const usesSize = (size_mappings || []).some(m => m.pot_size === pot.size || m.pot_size === invService.predictPotSize(pot.size));
+                    if (usesSize) {
+                        await invService.syncPotInventoryToShopify(pot.pot_color_id, pot.size, pot.quantity);
+                    }
+                }
+            } catch (syncErr) {
+                console.error('Initial inventory sync failed for new config:', syncErr.message);
             }
         }
 

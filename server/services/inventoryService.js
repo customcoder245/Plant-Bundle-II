@@ -193,11 +193,32 @@ function matchColor(colorName, text, colorType = '') {
     return false;
 }
 
+function predictPotSize(optionValue) {
+    const shop = (optionValue || '').toLowerCase().trim();
+    if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
+        return 'Small';
+    }
+    if (shop.includes('6"') || shop.includes('6 inch') || shop.includes('medium') || shop.includes('standard') || shop.includes('6')) {
+        return 'Medium';
+    }
+    if (shop.includes('8"') || shop.includes('10"') || shop.includes('8 inch') || shop.includes('10 inch') || shop.includes('large') || shop.includes('8') || shop.includes('10') || shop.includes('gal')) {
+        return 'Large';
+    }
+    if (shop.includes('12"') || shop.includes('14"') || shop.includes('12 inch') || shop.includes('xl') || shop.includes('extra-large') || shop.includes('extra large') || shop.includes('12') || shop.includes('14')) {
+        return 'Extra Large';
+    }
+    return 'Medium';
+}
+
 function matchSize(dbSize, shopifyOptionValue) {
     const dbNorm = normalize(dbSize);
     const shopNorm = normalize(shopifyOptionValue);
 
     if (dbNorm === shopNorm) return true;
+
+    // Support matching canonical names (Small/Medium/Large) to Shopify values
+    const canonical = predictPotSize(shopifyOptionValue);
+    if (dbSize === canonical) return true;
 
     // Legacy fallback support
     if (dbNorm === 'small' && (shopNorm.includes('2') || shopNorm.includes('4'))) return true;
@@ -224,13 +245,14 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
         const locationId = await getShopifyLocationId(shop, token);
         if (!locationId) return;
 
-        // Optimized: Only fetch configurations that actually use this pot size in their mappings
+        // Optimized: Fetch configurations that use either this exact size OR the canonical mapped version of it
+        const canonicalSize = predictPotSize(size);
         const configsRes = await pool.query(`
             SELECT DISTINCT c.id, c.shopify_product_id, c.product_title 
             FROM product_pot_config c
             JOIN size_mappings sm ON c.id = sm.product_config_id
-            WHERE c.is_enabled = true AND sm.pot_size = $1
-        `, [size]);
+            WHERE c.is_enabled = true AND (sm.pot_size = $1 OR sm.pot_size = $2)
+        `, [size, canonicalSize]);
 
         const configs = configsRes.rows;
         if (configs.length === 0) {
@@ -479,4 +501,4 @@ async function syncAllBundlesToShopify() {
     return { success: true, potTypesSynced: totalUpdated };
 }
 
-module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify, syncAllBundlesToShopify, getShopifyLocationId };
+module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify, syncAllBundlesToShopify, getShopifyLocationId, predictPotSize };
