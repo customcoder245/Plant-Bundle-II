@@ -1754,7 +1754,6 @@ function CreateNewProduct({ editId }) {
                                                 {isExpanded && g.items.map(subItem => {
                                                     const originalIndex = variants.findIndex(val => val.title === subItem.title);
                                                     // Find pot sync status for this variant
-                                                    const colorGroup = g.subGroups.find(c => normalize(c.name) === normalize(subItem.option2));
                                                     return (
                                                         <tr
                                                             key={subItem.title}

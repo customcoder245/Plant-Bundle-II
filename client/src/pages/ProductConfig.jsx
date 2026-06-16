@@ -228,6 +228,7 @@ function ProductConfig() {
                         </Box>
                         <Divider />
                         <ResourceList
+                            items={configs}
                             resourceName={{ singular: 'bundle', plural: 'bundles' }}
                             renderItem={(config) => {
                                 const shopifyProduct = (shopifyProducts || []).find(p => p.id && config.shopify_product_id && p.id.toString() === config.shopify_product_id.toString());
