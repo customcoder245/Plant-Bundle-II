@@ -1240,9 +1240,8 @@ function CreateNewProduct({ editId }) {
 
     const normalize = (text) => (text || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
-    // Grouping calculations for the variants list view — two-level: Size → Color
+    // Grouping calculations for the variants list view — two-level: Size → flat variants
     const getGroupedVariants = () => {
-        // 1. Group by Size first
         const sizeGroups = {};
         variants.forEach(v => {
             const size = (v.option1 || '').trim();
@@ -1252,39 +1251,36 @@ function CreateNewProduct({ editId }) {
             sizeGroups[size].variants.push(v);
         });
 
-        // 2. Inside each size, group by Color and link to pot inventory
         return Object.values(sizeGroups).map(s => {
+            // Build color sub-groups for inventory matching
             s.variants.forEach(v => {
                 const color = (v.option2 || '').trim();
-
                 if (!s.colors[color]) {
                     const potMatch = potInventory.find(p =>
                         normalize(p.size) === normalize(s.title) &&
                         normalize(p.color_name) === normalize(color)
                     );
-
                     s.colors[color] = {
                         name: color,
                         potStock: potMatch ? (parseInt(potMatch.quantity) || 0) : 0,
                         potId: potMatch?.id,
                         isSynced: !!potMatch,
-                        items: [],
-                        totalShopifyInv: 0
                     };
                 }
-                s.colors[color].items.push(v);
-                s.colors[color].totalShopifyInv += (parseInt(v.inventory_quantity) || 0);
             });
 
             const colorList = Object.values(s.colors);
             const totalPotStock = colorList.reduce((sum, c) => sum + c.potStock, 0);
+            const prices = s.variants.map(v => parseFloat(v.price) || 0);
+            const priceMin = Math.min(...prices).toFixed(2);
+            const priceMax = Math.max(...prices).toFixed(2);
 
             return {
                 title: s.title,
                 items: s.variants,
                 available: totalPotStock,
                 subGroups: colorList,
-                qtyDisplay: `${totalPotStock}`
+                priceDisplay: priceMin === priceMax ? `$ ${priceMin}` : `$ ${priceMin} - ${priceMax}`,
             };
         });
     };
@@ -1685,131 +1681,108 @@ function CreateNewProduct({ editId }) {
                                         const isExpanded = expandedGroups.has(g.title);
                                         return (
                                             <React.Fragment key={g.title}>
+                                                {/* ── Level 1: Size header row ── */}
                                                 <tr
-                                                    key={g.title}
                                                     style={{
                                                         borderBottom: '1px solid #f1f2f3',
-                                                        background: expandedGroups.has(g.title) ? '#fafbfb' : 'white',
+                                                        background: isExpanded ? '#fafbfb' : 'white',
                                                         cursor: 'pointer'
                                                     }}
                                                     onClick={() => toggleGroupExpand(g.title)}
                                                 >
-                                                    <td style={{ padding: '12px 16px' }}>
+                                                    {/* Checkbox + image + title */}
+                                                    <td style={{ padding: '14px 16px' }}>
                                                         <InlineStack gap="300" blockAlign="center">
                                                             <Checkbox
                                                                 checked={g.items.length > 0 && g.items.every(v => selectedVariants.includes(v.id || v.title))}
-                                                                onChange={() => handleSelectGroup(g)}
+                                                                onChange={(e) => { e.stopPropagation?.(); handleSelectGroup(g); }}
                                                             />
-                                                            <div style={{ width: '40px', height: '40px', background: '#fcfcfc', border: '1px solid #e8e9ea', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                                                <Icon source={DuplicateIcon} tone="subdued" />
+                                                            <div style={{ width: '42px', height: '42px', background: '#f6f6f6', border: '1px solid #e8e9ea', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 }}>
+                                                                <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
-                                                            <BlockStack gap="050">
-                                                                <Text variant="bodyMd" fontWeight="bold">Size: {g.title}</Text>
-                                                                <Text variant="bodyXs" tone="subdued">{g.subGroups.length} Colors • {g.items.length} Variants</Text>
+                                                            <BlockStack gap="0">
+                                                                <Text variant="bodyMd" fontWeight="bold">{g.title}</Text>
+                                                                <Text variant="bodyXs" tone="subdued">{g.items.length} variants</Text>
                                                             </BlockStack>
                                                         </InlineStack>
                                                     </td>
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        {/* Price hidden for size header as it's a range */}
-                                                    </td>
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <div style={{ maxWidth: '100px' }}>
-                                                            <TextField
-                                                                label="Total Available"
-                                                                labelHidden
-                                                                value={g.available}
-                                                                disabled
-                                                                autoComplete="off"
-                                                            />
+                                                    {/* Price range — plain text */}
+                                                    <td style={{ padding: '14px 16px' }}>
+                                                        <div style={{ display: 'inline-block', border: '1px solid #c9cccf', borderRadius: '6px', padding: '6px 12px', minWidth: '140px', textAlign: 'center', background: '#fff' }}>
+                                                            <Text variant="bodySm">{g.priceDisplay}</Text>
                                                         </div>
                                                     </td>
-                                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                                        <Button
-                                                            variant="plain"
-                                                            icon={isExpanded ? ChevronUpIcon : ChevronDownIcon}
-                                                            onClick={() => toggleGroupExpand(g.title)}
-                                                        />
+                                                    {/* Total available — plain number */}
+                                                    <td style={{ padding: '14px 16px' }}>
+                                                        <Text variant="bodyMd">{g.available}</Text>
+                                                    </td>
+                                                    {/* Chevron */}
+                                                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                                        <Icon source={isExpanded ? ChevronUpIcon : ChevronDownIcon} tone="subdued" />
                                                     </td>
                                                 </tr>
 
-                                                {/* Expanded Color Sub-Groups */}
-                                                {isExpanded && g.subGroups.map(colorGroup => (
-                                                    <React.Fragment key={colorGroup.name}>
-                                                        <tr style={{ borderBottom: '1px solid #f1f2f3', background: '#f9fafb' }}>
-                                                            <td style={{ padding: '8px 16px 8px 48px' }}>
+                                                {/* ── Level 2: Flat individual variants ── */}
+                                                {isExpanded && g.items.map(subItem => {
+                                                    const originalIndex = variants.findIndex(val => val.title === subItem.title);
+                                                    // Find pot sync status for this variant
+                                                    const colorGroup = g.subGroups.find(c => normalize(c.name) === normalize(subItem.option2));
+                                                    return (
+                                                        <tr
+                                                            key={subItem.title}
+                                                            style={{ borderBottom: '1px solid #f5f5f5', background: '#fff' }}
+                                                        >
+                                                            {/* Checkbox + small icon + full title */}
+                                                            <td style={{ padding: '10px 16px 10px 32px' }}>
                                                                 <InlineStack gap="200" blockAlign="center">
-                                                                    <div style={{ width: '32px', height: '32px', background: '#fff', border: '1px solid #e1e3e5', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                        <div style={{ width: '20px', height: '20px', borderRadius: '2px', background: colorGroup.name.toLowerCase(), border: '1px solid #eee' }} />
+                                                                    <Checkbox
+                                                                        checked={selectedVariants.includes(subItem.id || subItem.title)}
+                                                                        onChange={() => handleSelectVariant(subItem.id || subItem.title)}
+                                                                    />
+                                                                    <div style={{ width: '34px', height: '34px', background: '#f6f6f6', border: '1px solid #e8e9ea', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                                                                        <Icon source={ImageIcon} tone="subdued" />
                                                                     </div>
-                                                                    <Text variant="bodySm" fontWeight="bold">{colorGroup.name}</Text>
+                                                                    <Text variant="bodySm">{subItem.title}</Text>
                                                                 </InlineStack>
                                                             </td>
-                                                            <td style={{ padding: '8px 16px' }}></td>
-                                                            <td style={{ padding: '8px 16px' }}>
-                                                                <div style={{ maxWidth: '90px' }}>
+                                                            {/* Price input */}
+                                                            <td style={{ padding: '10px 16px' }}>
+                                                                <div style={{ width: '130px' }}>
                                                                     <TextField
-                                                                        label="Pot Stock"
+                                                                        label="price"
                                                                         labelHidden
-                                                                        type="number"
-                                                                        value={colorGroup.potStock}
-                                                                        onChange={(val) => {
-                                                                            if (colorGroup.potId) {
-                                                                                handlePotStockUpdate(colorGroup.potId, val);
-                                                                            }
-                                                                        }}
+                                                                        prefix="$"
+                                                                        value={subItem.price}
+                                                                        onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'price', val)}
                                                                         autoComplete="off"
-                                                                        size="slim"
                                                                     />
                                                                 </div>
                                                             </td>
-                                                            <td></td>
-                                                        </tr>
-
-                                                        {/* Individual Variants for this Color */}
-                                                        {colorGroup.items.map(subItem => (
-                                                            <tr key={subItem.title} style={{ borderBottom: '1px solid #f9fafb', background: '#fff' }}>
-                                                                <td style={{ padding: '6px 16px 6px 80px' }}>
-                                                                    <Text variant="bodyXs" tone="subdued">{subItem.title.split(' / ').pop()}</Text>
-                                                                </td>
-                                                                <td style={{ padding: '6px 16px' }}>
-                                                                    <div style={{ maxWidth: '100px' }}>
-                                                                        <TextField
-                                                                            label="price"
-                                                                            labelHidden
-                                                                            prefix="$"
-                                                                            value={subItem.price}
-                                                                            onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'price', val)}
-                                                                            autoComplete="off"
-                                                                            size="slim"
-                                                                        />
-                                                                    </div>
-                                                                </td>
-                                                                <td style={{ padding: '6px 16px' }}>
-                                                                    <div style={{ maxWidth: '80px' }}>
-                                                                        <TextField
-                                                                            label="qty"
-                                                                            labelHidden
-                                                                            type="number"
-                                                                            value={subItem.inventory_quantity}
-                                                                            disabled={colorGroup.isSynced}
-                                                                            onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
-                                                                            autoComplete="off"
-                                                                            size="slim"
-                                                                        />
-                                                                    </div>
-                                                                </td>
-                                                                <td style={{ textAlign: 'right', paddingRight: '16px' }}>
-                                                                    <Button
-                                                                        icon={DeleteIcon}
-                                                                        variant="plain"
-                                                                        tone="critical"
-                                                                        onClick={() => handleDeleteVariant(subItem.title)}
+                                                            {/* Available (qty) input — locked if pot-synced */}
+                                                            <td style={{ padding: '10px 16px' }}>
+                                                                <div style={{ width: '80px' }}>
+                                                                    <TextField
+                                                                        label="qty"
+                                                                        labelHidden
+                                                                        type="number"
+                                                                        value={String(colorGroup?.isSynced ? (colorGroup.potStock ?? subItem.inventory_quantity) : subItem.inventory_quantity)}
+                                                                        disabled={!!colorGroup?.isSynced}
+                                                                        onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
+                                                                        autoComplete="off"
                                                                     />
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </React.Fragment>
-                                                ))}
+                                                                </div>
+                                                            </td>
+                                                            {/* Edit icon */}
+                                                            <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                                                                <Button
+                                                                    icon={EditIcon}
+                                                                    variant="plain"
+                                                                    onClick={() => setEditingVariantIndex(originalIndex)}
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             </React.Fragment>
                                         );
                                     })}
