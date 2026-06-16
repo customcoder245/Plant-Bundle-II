@@ -966,8 +966,9 @@ function CreateNewProduct({ editId }) {
             if (noPot === 'Without Pot') {
                 if (seenWithoutPot.has(size)) return false;
                 seenWithoutPot.add(size);
-                // Force color to N/A for the chosen one
-                combo[1].value = 'N/A';
+                // Clone the option object before modifying value, otherwise 
+                // it overwrites the color for "With Pot" variants too!
+                combo[1] = { ...combo[1], value: 'N/A' };
             }
             return true;
         });
