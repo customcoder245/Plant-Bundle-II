@@ -1260,6 +1260,21 @@ function CreateNewProduct({ editId }) {
             if (!sizeGroups[size]) {
                 sizeGroups[size] = { title: size, variants: [], colors: {} };
             }
+
+            // Enrich variant with pot data for direct sync
+            const potMatch = potInventory.find(p =>
+                normalize(p.size) === normalize(size) &&
+                normalize(p.color_name) === normalize(v.option2)
+            );
+
+            if (potMatch && v.option3 !== 'Without Pot') {
+                v.pot_id = potMatch.id;
+                v.pot_stock = parseInt(potMatch.quantity) || 0;
+            } else {
+                v.pot_id = null;
+                v.pot_stock = null;
+            }
+
             sizeGroups[size].variants.push(v);
         });
 
@@ -1267,7 +1282,7 @@ function CreateNewProduct({ editId }) {
             // Build color sub-groups for inventory matching
             s.variants.forEach(v => {
                 const color = (v.option2 || '').trim();
-                if (color === 'N/A') return; // Without pot doesnt consume inventory
+                if (color === 'N/A' || !color) return;
 
                 if (!s.colors[color]) {
                     const potMatch = potInventory.find(p =>
@@ -1320,20 +1335,15 @@ function CreateNewProduct({ editId }) {
     const handleUpdateVariantDirectly = (variantTitle, field, val) => {
         setVariants(prev => prev.map(v => {
             if (v.title === variantTitle) {
-                let finalVal = val;
-                if (field === 'inventory_quantity' && v.option3 === 'With Pot') {
-                    const potStock = potInventory.find(p =>
-                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
-                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
-                    )?.quantity || 0;
-
-                    if (parseInt(val) > potStock) {
-                        finalVal = String(potStock);
-                        setMsg({ text: `Capped at ${potStock} due to "${v.option2} ${v.option1}" pot availability.`, type: 'info' });
-                        setTimeout(() => setMsg({ text: '', type: '' }), 3000);
+                // If we are updating inventory and it's a "With Pot" variant linked to a physical pot,
+                // we trigger a global pot inventory update, which in turn updates ALL related products.
+                if (field === 'inventory_quantity' && v.pot_id && v.option3 !== 'Without Pot') {
+                    const newQty = parseInt(val);
+                    if (!isNaN(newQty)) {
+                        handlePotStockUpdate(v.pot_id, newQty);
                     }
                 }
-                return { ...v, [field]: finalVal };
+                return { ...v, [field]: val };
             }
             return v;
         }));
@@ -1793,13 +1803,13 @@ function CreateNewProduct({ editId }) {
                                                                         </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <div style={{ width: '80px' }}>
+                                                                    <div style={{ width: '120px' }}>
                                                                         <TextField
                                                                             label="qty"
                                                                             labelHidden
                                                                             type="number"
-                                                                            value={String(colorGroup?.isSynced ? (colorGroup.potStock ?? subItem.inventory_quantity) : subItem.inventory_quantity)}
-                                                                            disabled={!!colorGroup?.isSynced}
+                                                                            suffix={subItem.pot_id ? "Pot Stock" : ""}
+                                                                            value={String(subItem.inventory_quantity)}
                                                                             onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
                                                                             autoComplete="off"
                                                                         />
