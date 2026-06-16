@@ -319,7 +319,7 @@ function DetailedVariantDetailsEditor({
     const [costPerItem, setCostPerItem] = useState(activeVariant.cost_per_item || '4.87');
     const [chargeTax, setChargeTax] = useState(activeVariant.charge_tax !== false);
     const [unitPrice, setUnitPrice] = useState(activeVariant.unit_price || '');
-    
+
     const [inventoryTracked, setInventoryTracked] = useState(activeVariant.inventory_tracked !== false);
     const [quantity, setQuantity] = useState(activeVariant.inventory_quantity || '0');
     const [sku, setSku] = useState(activeVariant.sku || '');
@@ -832,13 +832,18 @@ function CreateNewProduct({ editId }) {
     const [noPotDiscount, setNoPotDiscount] = useState('10.00');
     const [loading, setLoading] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
-    
+
     // Multi-option configurations matching Image 1
+    // Updated to start empty and fill from DB
     const [options, setOptions] = useState([
-        { name: 'Size', values: ['4" Pot', '6" Pot', '8" Pot'] },
-        { name: 'Pot Color', values: ['White', 'Black', 'Teal', 'Light Green', 'Self Watering'] },
+        { name: 'Size', values: [] },
+        { name: 'Pot Color', values: [] },
         { name: 'No Pot Option', values: ['With Pot', 'Without Pot'] }
     ]);
+
+    const [potInventory, setPotInventory] = useState([]);
+    const [potColors, setPotColors] = useState([]);
+    const [inventoryLoaded, setInventoryLoaded] = useState(false);
 
     // Combinations of options. 3 * 5 * 2 = 30 variants.
     const [variants, setVariants] = useState([]);
@@ -867,6 +872,39 @@ function CreateNewProduct({ editId }) {
         }
     }, [editId]);
 
+    // Fetch Pot Inventory and Colors for dynamic options
+    useEffect(() => {
+        const fetchPotsData = async () => {
+            try {
+                const [invRes, colorsRes] = await Promise.all([
+                    fetch('/api/inventory'),
+                    fetch('/api/pots/colors')
+                ]);
+                const invData = await invRes.json();
+                const colorsData = await colorsRes.json();
+
+                setPotInventory(invData);
+                setPotColors(colorsData);
+                setInventoryLoaded(true);
+
+                // Update default options based on fetched data if not in edit mode
+                if (!editId) {
+                    const uniqueSizes = [...new Set(invData.map(p => p.size))];
+                    const activeColors = colorsData.filter(c => c.is_active !== false).map(c => c.name);
+
+                    setOptions([
+                        { name: 'Size', values: uniqueSizes.length > 0 ? uniqueSizes : ['4" Pot', '6" Pot', '8" Pot'] },
+                        { name: 'Pot Color', values: activeColors.length > 0 ? activeColors : ['White', 'Black', 'Teal', 'Light Green', 'Self Watering'] },
+                        { name: 'No Pot Option', values: ['With Pot', 'Without Pot'] }
+                    ]);
+                }
+            } catch (err) {
+                console.error('Failed to fetch pot inventory details:', err);
+            }
+        };
+        fetchPotsData();
+    }, [editId]);
+
     // Generates combinations for the variants array
     const generateCombinations = (opts) => {
         if (opts.length === 0) return [];
@@ -891,7 +929,20 @@ function CreateNewProduct({ editId }) {
         // In edit mode, wait until Shopify data has been fully loaded
         if (editId && !isLoaded) return;
 
+        // Wait for inventory data to avoid setting 0 quantities erroneously
+        if (!inventoryLoaded && !editId) return;
+
         const combos = generateCombinations(options);
+
+        // Function to find available pot quantity
+        const getPotAvailable = (size, color, noPot) => {
+            if (noPot === 'Without Pot') return 1000; // Unlimited or high limit for bare root
+            const match = potInventory.find(p =>
+                p.size.toLowerCase().trim() === size.toLowerCase().trim() &&
+                p.color_name.toLowerCase().trim() === color.toLowerCase().trim()
+            );
+            return match ? match.quantity : 0;
+        };
 
         // If variants were loaded from Shopify, ONLY add brand-new combos — never overwrite
         if (variantsLockedRef.current) {
@@ -901,6 +952,9 @@ function CreateNewProduct({ editId }) {
                 return !currentVariants.find(v => v.title === key);
             });
             if (newCombos.length === 0) return; // nothing new to add
+
+            let cappedAny = false;
+
             // Add only the truly new combos with sensible defaults
             const additions = newCombos.map(combo => {
                 const opt1 = combo[0]?.value || '';
@@ -908,12 +962,18 @@ function CreateNewProduct({ editId }) {
                 const opt3 = combo[2]?.value || '';
                 const key = [opt1, opt2, opt3].filter(Boolean).join(' / ');
                 let basePrice = 29.49;
-                let baseQuantity = 0;
+
+                // Calculate Pot Availability
+                const potStock = getPotAvailable(opt1, opt2, opt3);
+                let baseQuantity = Math.min(20, potStock); // Default to 20 or available pots
+                if (baseQuantity < 20 && opt3 === 'With Pot') cappedAny = true;
+
                 if (opt1.includes('6')) basePrice = 45.49;
                 else if (opt1.includes('8')) basePrice = 71.25;
                 if (opt2 === 'Self Watering') basePrice += 10.00;
                 else if (opt2 === 'Teal' || opt2 === 'Light Green') basePrice += 5.00;
                 if (opt3 === 'Without Pot') basePrice = Math.max(9.99, basePrice - 10.00);
+
                 return {
                     option1: opt1, option2: opt2, option3: opt3,
                     title: key, pot_size: opt1,
@@ -924,16 +984,25 @@ function CreateNewProduct({ editId }) {
                     physical_product: true, weight: '1.0', weight_unit: 'lb',
                     package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
                     country_of_origin: '', hs_code: '',
-                    metafields: { color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                    metafields: {
+                        color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
                         age_group: '', condition: '', gender: '', mpn: '',
-                        supplier: '', variant_title: '', pots: '', width: '', height: '' }
+                        supplier: '', variant_title: '', pots: '', width: '', height: ''
+                    }
                 };
             });
+
+            if (cappedAny) {
+                setMsg({ text: 'Note: Some new variants were capped at lower quantities due to current pot availability.', type: 'info' });
+                setTimeout(() => setMsg({ text: '', type: '' }), 6000);
+            }
+
             setVariants(prev => [...prev, ...additions]);
             return;
         }
 
         // New product mode — generate all combos with realistic defaults
+        let cappedAnyCount = 0;
         const nextVariants = combos.map(combo => {
             const opt1 = combo[0]?.value || '';
             const opt2 = combo[1]?.value || '';
@@ -952,7 +1021,14 @@ function CreateNewProduct({ editId }) {
             else if (opt2 === 'Teal' || opt2 === 'Light Green') basePrice += 5.00;
             if (opt3 === 'Without Pot') basePrice = Math.max(9.99, basePrice - 10.00);
 
-            const finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
+            let finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
+
+            // Apply Pot Inventory Constraint
+            const potStock = getPotAvailable(opt1, opt2, opt3);
+            if (finalQty > potStock && opt3 === 'With Pot') {
+                finalQty = potStock;
+                cappedAnyCount++;
+            }
 
             return {
                 option1: opt1, option2: opt2, option3: opt3,
@@ -964,13 +1040,20 @@ function CreateNewProduct({ editId }) {
                 physical_product: true, weight: '1.0', weight_unit: 'lb',
                 package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
                 country_of_origin: '', hs_code: '',
-                metafields: { color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
+                metafields: {
+                    color_image: '', supplier_4: '', supplier_3: '', supplier_2: '',
                     age_group: '', condition: '', gender: '', mpn: '',
-                    supplier: '', variant_title: '', pots: '', width: '', height: '' }
+                    supplier: '', variant_title: '', pots: '', width: '', height: ''
+                }
             };
         });
+
+        if (cappedAnyCount > 0) {
+            setMsg({ text: `Availability sync: ${cappedAnyCount} variants were adjusted to match current pot stock.`, type: 'info' });
+        }
+
         setVariants(nextVariants);
-    }, [options, isLoaded]);
+    }, [options, isLoaded, inventoryLoaded]);
 
     const predictPotSize = (optionValue) => {
         const shop = (optionValue || '').toLowerCase().trim();
@@ -1007,7 +1090,7 @@ function CreateNewProduct({ editId }) {
                 collection: dbConfig?.collection || ''
             });
             setTags(shopifyProduct.tags ? shopifyProduct.tags.split(',').map(t => t.trim()).filter(Boolean) : []);
-            
+
             // Set options
             if (shopifyProduct.options && shopifyProduct.options.length > 0) {
                 const realOptions = shopifyProduct.options.filter(o => o.name !== 'Title');
@@ -1166,7 +1249,20 @@ function CreateNewProduct({ editId }) {
     const handleUpdateVariantDirectly = (variantTitle, field, val) => {
         setVariants(prev => prev.map(v => {
             if (v.title === variantTitle) {
-                return { ...v, [field]: val };
+                let finalVal = val;
+                if (field === 'inventory_quantity' && v.option3 === 'With Pot') {
+                    const potStock = potInventory.find(p =>
+                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
+                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                    )?.quantity || 0;
+
+                    if (parseInt(val) > potStock) {
+                        finalVal = String(potStock);
+                        setMsg({ text: `Capped at ${potStock} due to "${v.option2} ${v.option1}" pot availability.`, type: 'info' });
+                        setTimeout(() => setMsg({ text: '', type: '' }), 3000);
+                    }
+                }
+                return { ...v, [field]: finalVal };
             }
             return v;
         }));
@@ -1215,6 +1311,9 @@ function CreateNewProduct({ editId }) {
             return;
         }
         if (isNaN(val)) return;
+
+        let anyCapped = false;
+
         setVariants(prev => prev.map(v => {
             let matches = false;
             if (groupBy === 'Size' && v.option1 === groupTitle) matches = true;
@@ -1222,10 +1321,27 @@ function CreateNewProduct({ editId }) {
             else if (groupBy === 'No Pot Option' && v.option3 === groupTitle) matches = true;
 
             if (matches) {
-                return { ...v, inventory_quantity: String(parseInt(val) || 0) };
+                let finalQty = parseInt(val) || 0;
+                if (v.option3 === 'With Pot') {
+                    const potStock = potInventory.find(p =>
+                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
+                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                    )?.quantity || 0;
+
+                    if (finalQty > potStock) {
+                        finalQty = potStock;
+                        anyCapped = true;
+                    }
+                }
+                return { ...v, inventory_quantity: String(finalQty) };
             }
             return v;
         }));
+
+        if (anyCapped) {
+            setMsg({ text: 'Some quantities were capped based on individual pot availability.', type: 'info' });
+            setTimeout(() => setMsg({ text: '', type: '' }), 4000);
+        }
     };
 
     const handleSave = async () => {
@@ -1271,9 +1387,9 @@ function CreateNewProduct({ editId }) {
                     // Navigate back to Product Config so it re-fetches live Shopify data
                     navigate('/products');
                 } else {
-                    setMsg({ 
-                        text: `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`, 
-                        type: 'success' 
+                    setMsg({
+                        text: `✅ "${title}" has been created and synced beautifully with ${variants.length} variants!`,
+                        type: 'success'
                     });
                     setTitle('');
                     setDescription('');
@@ -1381,7 +1497,7 @@ function CreateNewProduct({ editId }) {
                                             + Add variant
                                         </Button>
                                     </InlineStack>
-                                    
+
                                     {/* Option rows with drag handles & tags */}
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         {options.map((opt, optIdx) => (
