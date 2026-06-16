@@ -155,8 +155,8 @@ function ProductConfig() {
     const handleGenerateSubmit = async () => {
         setActionLoading('generating');
         try {
-            const sizesArr = generateData.sizes.filter(s => s.name.trim() !== '');
-            const colorsArr = availableColors.filter(c => generateData.colors.includes(c.name));
+            const sizesArr = (Array.isArray(generateData.sizes) ? generateData.sizes : []).filter(s => s.name && s.name.trim() !== '');
+            const colorsArr = (Array.isArray(availableColors) ? availableColors : []).filter(c => (generateData.colors || []).includes(c.name));
 
             const res = await fetch(`/api/products/${generateData.shopify_product_id}/generate-variants`, {
                 method: 'POST',
