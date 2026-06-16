@@ -1434,9 +1434,17 @@ function CreateNewProduct({ editId }) {
                 const updatedQty = parseInt(newQty);
                 setVariants(prev => prev.map(v => {
                     const pot = updatedInv.find(p => p.id === potId);
-                    const isMatch = normalize(v.option1) === normalize(pot?.size) &&
-                        normalize(v.option2) === normalize(pot?.color_name);
-                    if (isMatch) {
+                    if (!pot) return v;
+
+                    const variantOptions = [v.option1, v.option2, v.option3].map(opt => normalize(opt));
+                    const potSizeNorm = normalize(pot.size);
+                    const potColorNorm = normalize(pot.color_name);
+
+                    // Using a more robust check specifically for size and color in ANY option
+                    const finalSizeMatch = variantOptions.some(opt => opt === potSizeNorm || opt.includes(potSizeNorm));
+                    const finalColorMatch = variantOptions.some(opt => opt === potColorNorm || opt.includes(potColorNorm));
+
+                    if (finalSizeMatch && finalColorMatch && v.option3 !== 'Without Pot') {
                         return { ...v, inventory_quantity: updatedQty };
                     }
                     return v;

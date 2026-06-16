@@ -237,26 +237,38 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 const mapping = mappings.find(m => String(m.shopify_variant_id) === String(variant.id));
                 if (!mapping) continue;
 
-                const isSizeMatch = normalize(mapping.pot_size) === normalize(size) ||
-                    (variant.option1 && normalize(variant.option1) === normalize(size)) ||
-                    matchSize(size, mapping.pot_size) ||
-                    matchSize(size, variant.option1);
+                // Robust Multi-Option Matching: Check all options and title for both color and size
+                const variantAttributes = [
+                    variant.option1,
+                    variant.option2,
+                    variant.option3,
+                    variant.title
+                ].filter(Boolean);
 
-                const isColorMatch = (variant.option2 && matchColor(colorName, variant.option2)) ||
-                    (variant.title && matchColor(colorName, variant.title));
+                const isSizeMatch = variantAttributes.some(attr =>
+                    normalize(attr) === normalize(size) ||
+                    normalize(attr) === normalize(mapping.pot_size) ||
+                    matchSize(size, attr) ||
+                    matchSize(mapping.pot_size, attr)
+                );
+
+                const isColorMatch = variantAttributes.some(attr =>
+                    matchColor(colorName, attr)
+                );
 
                 if (isSizeMatch && isColorMatch) {
-                    console.log(`[SYNC] Match found! Updating ${shopifyProduct.title} - ${variant.title} (ID: ${variant.id}) -> ${quantity} available.`);
+                    console.log(`[SYNC] SUCCESS! Found Match for Color:${colorName}, Size:${size} in Variant: "${variant.title}" (ID: ${variant.id})`);
 
                     // 1. Ensure tracking is turned ON for this item
                     try {
-                        await fetch(`https://${shop}/admin/api/2023-10/inventory_items/${variant.inventory_item_id}.json`, {
+                        const trackRes = await fetch(`https://${shop}/admin/api/2023-10/inventory_items/${variant.inventory_item_id}.json`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
                             body: JSON.stringify({ inventory_item: { id: variant.inventory_item_id, tracked: true } })
                         });
+                        if (!trackRes.ok) console.error(`[SYNC] Failed to enable tracking: ${await trackRes.text()}`);
                     } catch (trackErr) {
-                        console.error(`[SYNC] Failed to enable tracking for ${variant.id}:`, trackErr.message);
+                        console.error(`[SYNC] track error:`, trackErr.message);
                     }
 
                     // 2. Set the actual inventory quantity
@@ -276,11 +288,11 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                     if (!setRes.ok) {
                         console.error(`[SYNC] Shopify update rejected for ${variant.id}: ${await setRes.text()}`);
                     } else {
-                        console.log(`[SYNC] Success! ${variant.id} is now ${quantity} on Shopify.`);
+                        console.log(`[SYNC] Shopify Updated: ${variant.id} is now ${quantity}.`);
                     }
-                } else if (isColorMatch || isSizeMatch) {
-                    // Log partial matches to help debug why the other one failed
-                    console.log(`[SYNC] Partial match for ${shopifyProduct.title} - ${variant.title}: SizeMatch=${isSizeMatch}, ColorMatch=${isColorMatch} (Looking for Color: ${colorName}, Size: ${size})`);
+                } else {
+                    // This log helps identify exactly why a variant didn't match during a pot update
+                    console.log(`[SYNC] Check: "${variant.title}" | ColorMatch: ${isColorMatch} | SizeMatch: ${isSizeMatch} (Query: ${colorName} @ ${size})`);
                 }
             }
         }
