@@ -168,24 +168,29 @@ async function getShopifyLocationId(shop, token) {
     return null;
 }
 
+function normalize(text) {
+    if (!text) return '';
+    let t = text.toLowerCase();
+    t = t.replace(/\s*pot\b/g, '');
+    t = t.replace(/\s*inch(es)?\b/g, '');
+    t = t.replace(/[^a-z0-9]/g, '');
+    return t.trim();
+}
+
 function matchColor(colorName, text) {
-    const c = colorName.toLowerCase().trim();
-    const t = text.toLowerCase().trim();
-    return c === t || t.includes(c) || c.includes(t);
+    return normalize(colorName) === normalize(text);
 }
 
 function matchSize(dbSize, shopifyOptionValue) {
-    const db = dbSize.toLowerCase().trim();
-    const shop = shopifyOptionValue.toLowerCase().trim();
+    const dbNorm = normalize(dbSize);
+    const shopNorm = normalize(shopifyOptionValue);
 
-    if (db === shop) return true;
+    if (dbNorm === shopNorm) return true;
 
-    if (db === 'extra large' && (shop === 'xl' || shop === 'extra-large' || shop === 'extra large')) return true;
-
-    if (db === 'small' && (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small'))) return true;
-    if (db === 'medium' && (shop.includes('6"') || shop.includes('6 inch') || shop.includes('medium') || shop.includes('standard'))) return true;
-    if (db === 'large' && (shop.includes('8"') || shop.includes('10"') || shop.includes('8 inch') || shop.includes('10 inch') || shop.includes('large'))) return true;
-    if (db === 'extra large' && (shop.includes('12"') || shop.includes('14"') || shop.includes('12 inch') || shop.includes('xl') || shop.includes('extra large'))) return true;
+    // Legacy fallback support
+    if (dbNorm === 'small' && (shopNorm.includes('2') || shopNorm.includes('4'))) return true;
+    if (dbNorm === 'medium' && (shopNorm.includes('6'))) return true;
+    if (dbNorm === 'large' && (shopNorm.includes('8') || shopNorm.includes('10'))) return true;
 
     return false;
 }
@@ -232,15 +237,30 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 const mapping = mappings.find(m => String(m.shopify_variant_id) === String(variant.id));
                 if (!mapping) continue;
 
-                const isSizeMatch = mapping.pot_size.toLowerCase().trim() === size.toLowerCase().trim() ||
-                    (variant.option1 && variant.option1.toLowerCase().trim() === size.toLowerCase().trim());
+                const isSizeMatch = normalize(mapping.pot_size) === normalize(size) ||
+                    (variant.option1 && normalize(variant.option1) === normalize(size)) ||
+                    matchSize(size, mapping.pot_size) ||
+                    matchSize(size, variant.option1);
 
                 const isColorMatch = (variant.option2 && matchColor(colorName, variant.option2)) ||
                     (variant.title && matchColor(colorName, variant.title));
 
                 if (isSizeMatch && isColorMatch) {
-                    console.log(`Syncing Shopify variant ${shopifyProduct.title} - ${variant.title} (ID: ${variant.id}) to ${quantity}`);
-                    await fetch(`https://${shop}/admin/api/2023-10/inventory_levels/set.json`, {
+                    console.log(`[SYNC] Match found! Updating ${shopifyProduct.title} - ${variant.title} (ID: ${variant.id}) -> ${quantity} available.`);
+
+                    // 1. Ensure tracking is turned ON for this item
+                    try {
+                        await fetch(`https://${shop}/admin/api/2023-10/inventory_items/${variant.inventory_item_id}.json`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
+                            body: JSON.stringify({ inventory_item: { id: variant.inventory_item_id, tracked: true } })
+                        });
+                    } catch (trackErr) {
+                        console.error(`[SYNC] Failed to enable tracking for ${variant.id}:`, trackErr.message);
+                    }
+
+                    // 2. Set the actual inventory quantity
+                    const setRes = await fetch(`https://${shop}/admin/api/2023-10/inventory_levels/set.json`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -252,6 +272,15 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                             available: quantity
                         })
                     });
+
+                    if (!setRes.ok) {
+                        console.error(`[SYNC] Shopify update rejected for ${variant.id}: ${await setRes.text()}`);
+                    } else {
+                        console.log(`[SYNC] Success! ${variant.id} is now ${quantity} on Shopify.`);
+                    }
+                } else if (isColorMatch || isSizeMatch) {
+                    // Log partial matches to help debug why the other one failed
+                    console.log(`[SYNC] Partial match for ${shopifyProduct.title} - ${variant.title}: SizeMatch=${isSizeMatch}, ColorMatch=${isColorMatch} (Looking for Color: ${colorName}, Size: ${size})`);
                 }
             }
         }

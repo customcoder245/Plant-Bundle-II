@@ -4,6 +4,15 @@ const pool = require('../db/pool');
 const { logActivity } = require('../services/activityService');
 const { shopify } = require('../index');
 
+function normalize(text) {
+    if (!text) return '';
+    let t = text.toLowerCase();
+    t = t.replace(/\s*pot\b/g, '');
+    t = t.replace(/\s*inch(es)?\b/g, '');
+    t = t.replace(/[^a-z0-9]/g, '');
+    return t.trim();
+}
+
 function predictPotSize(optionValue) {
     const shop = (optionValue || '').toLowerCase().trim();
     if (shop.includes('2"') || shop.includes('3"') || shop.includes('4"') || shop.includes('2 inch') || shop.includes('4 inch') || shop.includes('small') || shop.includes('2') || shop.includes('4')) {
@@ -138,8 +147,9 @@ router.post('/create', async (req, res) => {
             for (let i = 0; i < shopifyProduct.variants.length; i++) {
                 const shopifyVariant = shopifyProduct.variants[i];
                 const inputVariant = (req.body.variants && req.body.variants[i]) || {};
-                const rawPotSize = inputVariant.pot_size || shopifyVariant.option1 || shopifyVariant.title;
-                const potSize = predictPotSize(rawPotSize);
+
+                // Priority: Use the explicit pot_size from frontend, fall back to prediction
+                const potSize = inputVariant.pot_size || predictPotSize(shopifyVariant.option1 || shopifyVariant.title);
 
                 await clientDb.query(
                     `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) VALUES ($1, $2, $3, $4)`,
@@ -432,13 +442,14 @@ router.put('/:id', async (req, res) => {
             if (shopifyProduct.variants && shopifyProduct.variants.length > 0) {
                 for (const shopifyVariant of shopifyProduct.variants) {
                     // Find corresponding variant from payload to extract chosen pot size
-                    const match = variants.find(v => 
+                    const match = variants.find(v =>
                         (v.option1 || '').toLowerCase().trim() === (shopifyVariant.option1 || '').toLowerCase().trim() &&
                         (v.option2 || '').toLowerCase().trim() === (shopifyVariant.option2 || '').toLowerCase().trim() &&
                         (v.option3 || '').toLowerCase().trim() === (shopifyVariant.option3 || '').toLowerCase().trim()
                     );
-                    const rawPotSize = match ? match.pot_size : (shopifyVariant.option1 || shopifyVariant.title);
-                    const potSize = predictPotSize(rawPotSize);
+
+                    // Priority: Frontend explicit pot_size -> Current Variant Title prediction
+                    const potSize = match?.pot_size || predictPotSize(shopifyVariant.option1 || shopifyVariant.title);
 
                     await clientDb.query(
                         `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) 
@@ -510,7 +521,7 @@ router.post('/sync-config', async (req, res) => {
                      RETURNING id`,
                     [p.id, p.title]
                 );
-                
+
                 const configId = configResult.rows[0].id;
 
                 // Sync exact variant names (sizes) from Shopify
@@ -527,14 +538,14 @@ router.post('/sync-config', async (req, res) => {
 
                     // Clear old mappings to perfectly reflect Shopify's current variants
                     await clientDb.query('DELETE FROM size_mappings WHERE product_config_id = $1', [configId]);
-                    
+
                     for (const v of p.variants) {
                         const vIdStr = String(v.id);
                         let potSize = existingMap.get(vIdStr);
                         if (!potSize) {
                             potSize = predictPotSize(v.option1 || v.title);
                         }
-                        
+
                         await clientDb.query(
                             `INSERT INTO size_mappings (product_config_id, shopify_variant_id, variant_title, pot_size) 
                              VALUES ($1, $2, $3, $4)`,
