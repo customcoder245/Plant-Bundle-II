@@ -972,14 +972,14 @@ function CreateNewProduct({ editId }) {
             return true;
         });
 
-        // Function to find available pot quantity
+        // Function to find available pot quantity with robust matching
         const getPotAvailable = (size, color, noPot) => {
-            if (noPot === 'Without Pot') return 1000; // Unlimited or high limit for bare root
+            if (noPot === 'Without Pot') return 1000;
             const match = potInventory.find(p =>
-                p.size.toLowerCase().trim() === size.toLowerCase().trim() &&
-                p.color_name.toLowerCase().trim() === color.toLowerCase().trim()
+                normalize(p.size) === normalize(size) &&
+                normalize(p.color_name) === normalize(color)
             );
-            return match ? match.quantity : 0;
+            return match ? (parseInt(match.quantity) || 0) : 0;
         };
 
         // If variants were loaded from Shopify, ONLY add brand-new combos — never overwrite
@@ -1242,7 +1242,14 @@ function CreateNewProduct({ editId }) {
         setOptions(next);
     };
 
-    const normalize = (text) => (text || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const normalize = (text) => {
+        if (!text) return '';
+        let t = text.toLowerCase();
+        t = t.replace(/\s*pot\b/g, '');    // remove "pot" or " pot"
+        t = t.replace(/\s*inch(es)?\b/g, ''); // remove "inch" or " inch"
+        t = t.replace(/[^a-z0-9]/g, '');   // remove special chars like " or -
+        return t.trim();
+    };
 
     // Grouping calculations for the variants list view — two-level: Size → flat variants
     const getGroupedVariants = () => {
@@ -1259,6 +1266,8 @@ function CreateNewProduct({ editId }) {
             // Build color sub-groups for inventory matching
             s.variants.forEach(v => {
                 const color = (v.option2 || '').trim();
+                if (color === 'N/A') return; // Without pot doesnt consume inventory
+
                 if (!s.colors[color]) {
                     const potMatch = potInventory.find(p =>
                         normalize(p.size) === normalize(s.title) &&
@@ -1276,8 +1285,8 @@ function CreateNewProduct({ editId }) {
             const colorList = Object.values(s.colors);
             const totalPotStock = colorList.reduce((sum, c) => sum + c.potStock, 0);
             const prices = s.variants.map(v => parseFloat(v.price) || 0);
-            const priceMin = Math.min(...prices).toFixed(2);
-            const priceMax = Math.max(...prices).toFixed(2);
+            const priceMin = prices.length > 0 ? Math.min(...prices).toFixed(2) : '0.00';
+            const priceMax = prices.length > 0 ? Math.max(...prices).toFixed(2) : '0.00';
 
             return {
                 title: s.title,
