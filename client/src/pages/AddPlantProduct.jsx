@@ -1254,15 +1254,28 @@ function CreateNewProduct({ editId }) {
             else if (groupBy === 'Size / Pot Color') key = `${opt1} / ${opt2}`;
 
             if (!groups[key]) {
-                // Find physical pot inventory for this group if possible
-                let potData = null;
-                if (groupBy === 'Size / Pot Color') {
-                    // Only find pot stock if it's not an N/A color (case-insensitive)
+                // Find physical pot inventory for this group based on current grouping
+                let potDataSum = 0;
+                let foundMatch = false;
+
+                if (groupBy === 'Size') {
+                    // Sum of all colors for this size
+                    const matches = potInventory.filter(p => normalize(p.size) === normalize(opt1));
+                    if (matches.length > 0) {
+                        potDataSum = matches.reduce((sum, p) => sum + (parseInt(p.quantity) || 0), 0);
+                        foundMatch = true;
+                    }
+                } else if (groupBy === 'Size / Pot Color') {
+                    // Specific color stock
                     if (opt2.toUpperCase() !== 'N/A') {
-                        potData = potInventory.find(p =>
+                        const match = potInventory.find(p =>
                             normalize(p.size) === normalize(opt1) &&
                             normalize(p.color_name) === normalize(opt2)
                         );
+                        if (match) {
+                            potDataSum = parseInt(match.quantity) || 0;
+                            foundMatch = true;
+                        }
                     }
                 }
 
@@ -1271,8 +1284,8 @@ function CreateNewProduct({ editId }) {
                     items: [],
                     prices: [],
                     totalInventory: 0,
-                    potId: potData?.id,
-                    potStock: potData?.quantity
+                    isSynced: foundMatch,
+                    potStock: potDataSum
                 };
             }
             groups[key].items.push(v);
@@ -1293,8 +1306,8 @@ function CreateNewProduct({ editId }) {
                 ...g,
                 priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
                 qtyDisplay: qtyDisplay,
-                // If synced with pots, the available count IS the pot stock
-                available: (g.potId && g.potStock !== null) ? g.potStock : g.totalInventory
+                // If synced with pots, use potStock, otherwise use Shopify inventory total
+                available: g.isSynced ? g.potStock : g.totalInventory
             };
         });
     };
@@ -1700,29 +1713,22 @@ function CreateNewProduct({ editId }) {
                                                     style={{
                                                         borderBottom: '1px solid #f1f2f3',
                                                         background: expandedGroups.has(g.title) ? '#fafbfb' : 'white',
-                                                        cursor: 'pointer',
-                                                        transition: 'background 0.2s ease'
+                                                        cursor: 'pointer'
                                                     }}
-                                                    className="variant-row-hover"
                                                     onClick={() => toggleGroupExpand(g.title)}
                                                 >
-                                                    <td style={{ padding: '14px 20px' }}>
-                                                        <InlineStack gap="400" blockAlign="center">
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <InlineStack gap="300" blockAlign="center">
                                                             <Checkbox
                                                                 checked={g.items.length > 0 && g.items.every(v => selectedVariants.includes(v.id || v.title))}
                                                                 onChange={() => handleSelectGroup(g)}
                                                             />
-                                                            <div style={{ width: '44px', height: '44px', background: '#f4f5f6', border: '1px solid #e1e3e5', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)' }}>
+                                                            <div style={{ width: '40px', height: '40px', background: '#fcfcfc', border: '1px solid #e8e9ea', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                                                                 <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
                                                             <BlockStack gap="050">
-                                                                <Text variant="bodyMd" fontWeight="bold" tone="base">{g.title}</Text>
-                                                                <InlineStack gap="150" blockAlign="center">
-                                                                    <Badge size="small" tone="info" progress="complete">{g.items.length} Variants</Badge>
-                                                                    {!g.potId && g.title.includes('/') && !normalize(g.title).includes('na') ? (
-                                                                        <Badge size="small" tone="warning" progress="incomplete">No Stock Link</Badge>
-                                                                    ) : null}
-                                                                </InlineStack>
+                                                                <Text variant="bodyMd" fontWeight="bold">{g.title}</Text>
+                                                                <Text variant="bodyXs" tone="subdued">{g.items.length} Variants</Text>
                                                             </BlockStack>
                                                         </InlineStack>
                                                     </td>
