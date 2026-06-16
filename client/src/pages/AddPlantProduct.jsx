@@ -853,6 +853,7 @@ function CreateNewProduct({ editId }) {
     const variantsLockedRef = useRef(false);
     // Track Shopify variant IDs that the user deleted, so we can remove them on save
     const deletedVariantIdsRef = useRef([]);
+    const syncTimerRef = useRef(null);
     useEffect(() => {
         variantsRef.current = variants;
     }, [variants]);
@@ -1261,21 +1262,19 @@ function CreateNewProduct({ editId }) {
                 sizeGroups[size] = { title: size, variants: [], colors: {} };
             }
 
-            // Enrich variant with pot data for direct sync
+            // Enrich variant CLONE with pot data for direct sync (avoiding mutation)
             const potMatch = potInventory.find(p =>
                 normalize(p.size) === normalize(size) &&
                 normalize(p.color_name) === normalize(v.option2)
             );
 
-            if (potMatch && v.option3 !== 'Without Pot') {
-                v.pot_id = potMatch.id;
-                v.pot_stock = parseInt(potMatch.quantity) || 0;
-            } else {
-                v.pot_id = null;
-                v.pot_stock = null;
-            }
+            const enrichedVariant = {
+                ...v,
+                pot_id: (potMatch && v.option3 !== 'Without Pot') ? potMatch.id : null,
+                pot_stock: (potMatch && v.option3 !== 'Without Pot') ? (parseInt(potMatch.quantity) || 0) : null
+            };
 
-            sizeGroups[size].variants.push(v);
+            sizeGroups[size].variants.push(enrichedVariant);
         });
 
         return Object.values(sizeGroups).map(s => {
@@ -1337,10 +1336,14 @@ function CreateNewProduct({ editId }) {
             if (v.title === variantTitle) {
                 // If we are updating inventory and it's a "With Pot" variant linked to a physical pot,
                 // we trigger a global pot inventory update, which in turn updates ALL related products.
+                // We DEBOUNCE this sync to ensure the user can type freely without UI lockups.
                 if (field === 'inventory_quantity' && v.pot_id && v.option3 !== 'Without Pot') {
                     const newQty = parseInt(val);
                     if (!isNaN(newQty)) {
-                        handlePotStockUpdate(v.pot_id, newQty);
+                        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+                        syncTimerRef.current = setTimeout(() => {
+                            handlePotStockUpdate(v.pot_id, newQty);
+                        }, 1000); // 1 second debounce
                     }
                 }
                 return { ...v, [field]: val };
@@ -1808,7 +1811,6 @@ function CreateNewProduct({ editId }) {
                                                                             label="qty"
                                                                             labelHidden
                                                                             type="number"
-                                                                            suffix={subItem.pot_id ? "Pot Stock" : ""}
                                                                             value={String(subItem.inventory_quantity)}
                                                                             onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
                                                                             autoComplete="off"
