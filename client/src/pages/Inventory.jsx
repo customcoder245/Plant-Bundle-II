@@ -62,6 +62,7 @@ function PotStockTab() {
     const [saving, setSaving] = useState(false);
     const [queryValue, setQueryValue] = useState('');
     const [syncing, setSyncing] = useState(false);
+    const [pushing, setPushing] = useState(false);
     const [syncBanner, setSyncBanner] = useState(null);
 
     useEffect(() => { fetchInventory(); }, []);
@@ -107,6 +108,28 @@ function PotStockTab() {
         }
     };
 
+    const handlePushToShopify = async () => {
+        setPushing(true);
+        setSyncBanner(null);
+        try {
+            const res = await fetch('/api/inventory/push-to-shopify', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setSyncBanner({
+                    tone: 'success',
+                    title: 'Inventory Pushed to Shopify',
+                    content: `Successfully pushed stock levels for ${data.potTypesSynced} pot types to all linked products in Shopify.`
+                });
+            } else {
+                throw new Error(data.error || 'Push failed');
+            }
+        } catch (e) {
+            setSyncBanner({ tone: 'critical', title: 'Push Failed', content: e.message });
+        } finally {
+            setPushing(false);
+        }
+    };
+
     const handleQuantityChange = (id, value) => {
         setEditedQuantities({ ...editedQuantities, [id]: value === '' ? '' : parseInt(value) || 0 });
     };
@@ -144,10 +167,11 @@ function PotStockTab() {
             <Layout.Section>
                 <BlockStack gap="500">
                     <InlineStack align="end" gap="200">
-                        <Button onClick={handleSyncShopifyPots} loading={syncing} icon={RefreshIcon} variant="secondary">Sync Pots from Shopify</Button>
+                        <Button onClick={handlePushToShopify} loading={pushing} variant="primary">Push Stock to Shopify</Button>
+                        <Button onClick={handleSyncShopifyPots} loading={syncing} icon={RefreshIcon} variant="secondary">Sync FROM Shopify</Button>
                         <Button onClick={fetchInventory} icon={RefreshIcon} variant="tertiary">Refresh</Button>
                         <Button onClick={handleSaveAll} loading={saving} disabled={!hasChanges} icon={SaveIcon} variant="primary">
-                            Save Inventory
+                            Save Changes
                         </Button>
                     </InlineStack>
 

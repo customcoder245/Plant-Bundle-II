@@ -216,361 +216,360 @@ function ProductConfig() {
                 title="Manage Bundles"
                 primaryAction={{ content: 'Sync with Shopify', onAction: handleSync, loading: isSyncing, icon: RefreshIcon }}
             >
-            <BlockStack gap="600">
-                <Card>
-                    <Box padding="400">
-                        <InlineStack gap="200" align="start" blockAlign="center">
-                            <div style={{ padding: 6, background: '#f5f7f5', borderRadius: 8 }}>
-                                <Leaf size={20} color="#1a4d2e" />
-                            </div>
-                            <Text variant="headingMd">Configured Products</Text>
-                        </InlineStack>
-                    </Box>
-                    <Divider />
-                    <ResourceList
-                        resourceName={{ singular: 'bundle', plural: 'bundles' }}
-                        items={configs}
-                        renderItem={(config) => {
-                            const shopifyProduct = shopifyProducts.find(p => p.id.toString() === config.shopify_product_id.toString());
-                            const imageUrl = shopifyProduct?.image?.src || "";
-                            const inventoryTotal = (shopifyProduct?.variants || []).reduce((sum, v) => sum + (v.inventory_quantity || 0), 0);
-
-                            const groups = {};
-                            const hasVariants = shopifyProduct?.variants?.length > 0;
-                            if (hasVariants) {
-                                shopifyProduct.variants.forEach(v => {
-                                    const mapping = (config.size_mappings || []).find(m => m.shopify_variant_id?.toString() === v.id?.toString());
-                                    const sizeName = v.option1 || (mapping ? mapping.pot_size : 'Unmapped');
-                                    if (!groups[sizeName]) {
-                                        groups[sizeName] = { variants: [], totalAvailable: 0, prices: [] };
-                                    }
-                                    groups[sizeName].variants.push(v);
-                                    groups[sizeName].totalAvailable += Math.max(0, parseInt(v.inventory_quantity || 0));
-                                    groups[sizeName].prices.push(parseFloat(v.price) || 0);
-                                });
-                            }
-
-                            return (
-                                <ResourceItem id={config.id.toString()} verticalAlignment="center">
-                                    <InlineStack align="space-between" blockAlign="center">
-                                        <InlineStack gap="400" blockAlign="center">
-                                            <Thumbnail source={imageUrl || 'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png'} alt={config.product_title} size="medium" />
-                                            <BlockStack gap="050">
-                                                <Text variant="bodyMd" fontWeight="semibold">{config.product_title}</Text>
-                                                <InlineStack gap="200">
-                                                    <Badge tone={config.is_enabled ? 'success' : 'attention'}>
-                                                        {config.is_enabled ? 'Active' : 'Disabled'}
-                                                    </Badge>
-                                                    <Text tone="subdued" variant="bodySm">{(config.size_mappings || []).length} Sizes mapped</Text>
-                                                    <Text tone="subdued" variant="bodySm">{hasVariants ? shopifyProduct.variants.length : 0} Shopify Variants</Text>
-                                                </InlineStack>
-                                            </BlockStack>
-                                        </InlineStack>
-
-                                        <InlineStack gap="200" blockAlign="center">
-                                            {shopifyProduct && (
-                                                <>
-                                                    <Button size="slim" onClick={() => handleGenerateOpen(shopifyProduct)}>Insta-Build Variants</Button>
-                                                </>                                            
-                                            )}
-                                            <Button size="slim" variant="primary" onClick={() => handleEditConfigSelect(config)}>Edit Config</Button>
-
-                                            <Badge tone={config.is_enabled ? 'success' : 'attention'}>
-                                                {config.is_enabled ? 'Live' : 'Hidden'}
-                                            </Badge>
-                                            <Button variant="secondary" onClick={() => handleToggle(config.id)} loading={actionLoading === config.id}>
-                                                {config.is_enabled ? 'Deactivate' : 'Activate'}
-                                            </Button>
-                                            <Button variant="tertiary" tone="critical" onClick={() => handleDelete(config.id)} loading={actionLoading === config.id}>Remove</Button>
-                                        </InlineStack>
-                                    </InlineStack>
-
-                                    {/* Variant Grouping Table */}
-                                    {hasVariants && Object.keys(groups).length > 0 && (
-                                        <div style={{ marginTop: '16px', border: '1px solid #dfe3e8', borderRadius: '8px', overflow: 'hidden' }}>
-                                            <div style={{ background: '#f9fafb', padding: '12px 16px', borderBottom: '1px solid #dfe3e8', display: 'flex', alignItems: 'center' }}>
-                                                <div style={{ flex: 1.5 }}>
-                                                    <Text variant="bodySm" fontWeight="bold">Group by: Size</Text>
-                                                </div>
-                                                <div style={{ flex: 2 }}>
-                                                    <Text variant="bodySm" fontWeight="bold" tone="subdued">Price</Text>
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <Text variant="bodySm" fontWeight="bold" tone="subdued">Available</Text>
-                                                </div>
-                                            </div>
-                                            {Object.entries(groups).map(([size, data], idx) => {
-                                                const minPrice = Math.min(...data.prices);
-                                                const maxPrice = Math.max(...data.prices);
-                                                const priceStr = data.prices.length === 0 ? '-' : minPrice === maxPrice ? `$ ${minPrice.toFixed(2)}` : `$ ${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}`;
-
-                                                return (
-                                                    <div key={idx} style={{ padding: '12px 16px', borderBottom: '1px solid #dfe3e8', display: 'flex', alignItems: 'center' }}>
-                                                        <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                            <div style={{ width: 40, height: 40, background: '#fff', border: '1px solid #dfe3e8', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                <div style={{ color: '#005bd3' }}>
-                                                                    <Leaf size={16} />
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <Text variant="bodyMd" fontWeight="semibold">{size}</Text>
-                                                                <Text tone="subdued" variant="bodySm">{data.variants.length} variant{data.variants.length > 1 ? 's' : ''}</Text>
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ flex: 2 }}>
-                                                            <div style={{ border: '1px solid #8c9196', padding: '4px 12px', borderRadius: '4px', display: 'inline-block', background: '#fff' }}>
-                                                                <Text variant="bodyMd">{priceStr}</Text>
-                                                            </div>
-                                                        </div>
-                                                        <div style={{ flex: 1 }}>
-                                                            <Text variant="bodyMd">{data.totalAvailable}</Text>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                            <div style={{ background: '#f9fafb', padding: '12px 16px' }}>
-                                                <Text tone="subdued" variant="bodySm">Total inventory across all locations: {inventoryTotal} available</Text>
-                                            </div>
-                                        </div>
-                                    )}
-                                </ResourceItem>
-                            );
-                        }}
-                        emptyState={(
-                            <EmptyState
-                                heading="No Bundles Configured"
-                                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-                            >
-                                <p>Pick a product from the Shopify list below to get started.</p>
-                            </EmptyState>
-                        )}
-                    />
-                </Card>
-
-                <Card padding="0">
-                    <Box padding="400">
-                        <BlockStack gap="400">
+                <BlockStack gap="600">
+                    <Card>
+                        <Box padding="400">
                             <InlineStack gap="200" align="start" blockAlign="center">
-                                <SettingsIcon style={{ width: 20 }} />
-                                <Text variant="headingMd">Available from Shopify</Text>
+                                <div style={{ padding: 6, background: '#f5f7f5', borderRadius: 8 }}>
+                                    <Leaf size={20} color="#1a4d2e" />
+                                </div>
+                                <Text variant="headingMd">Configured Products</Text>
                             </InlineStack>
-                            <TextField
-                                prefix={<SearchIcon style={{ width: 18 }} />}
-                                placeholder="Find products to connect..."
-                                value={searchQuery}
-                                onChange={setSearchQuery}
-                                autoComplete="off"
-                                clearButton
-                                onClearButtonClick={() => setSearchQuery('')}
-                            />
-                        </BlockStack>
-                    </Box>
-                    <Divider />
-                    <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                        </Box>
+                        <Divider />
                         <ResourceList
-                            items={unconfiguredProducts}
-                            loading={syncLoading}
-                            renderItem={(product) => {
-                                const inventoryTotal = (product.variants || []).reduce((sum, v) => sum + (v.inventory_quantity || 0), 0);
+                            resourceName={{ singular: 'bundle', plural: 'bundles' }}
+                            renderItem={(config) => {
+                                const shopifyProduct = (shopifyProducts || []).find(p => p.id && config.shopify_product_id && p.id.toString() === config.shopify_product_id.toString());
+                                const imageUrl = shopifyProduct?.image?.src || "";
+                                const inventoryTotal = (shopifyProduct?.variants || []).reduce((sum, v) => sum + (parseInt(v.inventory_quantity) || 0), 0);
+
+                                const groups = {};
+                                const hasVariants = (shopifyProduct?.variants || []).length > 0;
+                                if (hasVariants) {
+                                    shopifyProduct.variants.forEach(v => {
+                                        const mapping = (config.size_mappings || []).find(m => m.shopify_variant_id && v.id && m.shopify_variant_id.toString() === v.id.toString());
+                                        const sizeName = v.option1 || (mapping ? mapping.pot_size : 'Unmapped');
+                                        if (!groups[sizeName]) {
+                                            groups[sizeName] = { variants: [], totalAvailable: 0, prices: [] };
+                                        }
+                                        groups[sizeName].variants.push(v);
+                                        groups[sizeName].totalAvailable += Math.max(0, parseInt(v.inventory_quantity || 0));
+                                        groups[sizeName].prices.push(parseFloat(v.price) || 0);
+                                    });
+                                }
+
                                 return (
-                                    <ResourceItem
-                                        id={product.id.toString()}
-                                        onClick={() => handleConfigSelect(product)}
-                                        verticalAlignment="center"
-                                    >
+                                    <ResourceItem id={config.id.toString()} verticalAlignment="center">
                                         <InlineStack align="space-between" blockAlign="center">
                                             <InlineStack gap="400" blockAlign="center">
-                                                <Thumbnail source={product.image?.src || 'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png'} alt={product.title} size="medium" />
-                                                <BlockStack>
-                                                    <Text variant="bodyMd" fontWeight="bold">{product.title}</Text>
-                                                    <Text tone="subdued" variant="bodySm">{(product.variants || []).length} variants available</Text>
-                                                    <Text tone="subdued" variant="bodySm">Total inventory across all locations: {inventoryTotal} available</Text>
+                                                <Thumbnail source={imageUrl || 'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png'} alt={config.product_title} size="medium" />
+                                                <BlockStack gap="050">
+                                                    <Text variant="bodyMd" fontWeight="semibold">{config.product_title}</Text>
+                                                    <InlineStack gap="200">
+                                                        <Badge tone={config.is_enabled ? 'success' : 'attention'}>
+                                                            {config.is_enabled ? 'Active' : 'Disabled'}
+                                                        </Badge>
+                                                        <Text tone="subdued" variant="bodySm">{(config.size_mappings || []).length} Sizes mapped</Text>
+                                                        <Text tone="subdued" variant="bodySm">{hasVariants ? shopifyProduct.variants.length : 0} Shopify Variants</Text>
+                                                    </InlineStack>
                                                 </BlockStack>
                                             </InlineStack>
-                                            <InlineStack gap="200">
-                                                <Button onClick={() => handleGenerateOpen(product)}>Insta-Build Variants</Button>
-                                                <Button variant="primary" onClick={() => handleConfigSelect(product)}>Configure</Button>
+
+                                            <InlineStack gap="200" blockAlign="center">
+                                                {shopifyProduct && (
+                                                    <>
+                                                        <Button size="slim" onClick={() => handleGenerateOpen(shopifyProduct)}>Insta-Build Variants</Button>
+                                                    </>
+                                                )}
+                                                <Button size="slim" variant="primary" onClick={() => handleEditConfigSelect(config)}>Edit Config</Button>
+
+                                                <Badge tone={config.is_enabled ? 'success' : 'attention'}>
+                                                    {config.is_enabled ? 'Live' : 'Hidden'}
+                                                </Badge>
+                                                <Button variant="secondary" onClick={() => handleToggle(config.id)} loading={actionLoading === config.id}>
+                                                    {config.is_enabled ? 'Deactivate' : 'Activate'}
+                                                </Button>
+                                                <Button variant="tertiary" tone="critical" onClick={() => handleDelete(config.id)} loading={actionLoading === config.id}>Remove</Button>
                                             </InlineStack>
                                         </InlineStack>
 
+                                        {/* Variant Grouping Table */}
+                                        {hasVariants && Object.keys(groups).length > 0 && (
+                                            <div style={{ marginTop: '16px', border: '1px solid #dfe3e8', borderRadius: '8px', overflow: 'hidden' }}>
+                                                <div style={{ background: '#f9fafb', padding: '12px 16px', borderBottom: '1px solid #dfe3e8', display: 'flex', alignItems: 'center' }}>
+                                                    <div style={{ flex: 1.5 }}>
+                                                        <Text variant="bodySm" fontWeight="bold">Group by: Size</Text>
+                                                    </div>
+                                                    <div style={{ flex: 2 }}>
+                                                        <Text variant="bodySm" fontWeight="bold" tone="subdued">Price</Text>
+                                                    </div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <Text variant="bodySm" fontWeight="bold" tone="subdued">Available</Text>
+                                                    </div>
+                                                </div>
+                                                {Object.entries(groups).map(([size, data], idx) => {
+                                                    const minPrice = Math.min(...data.prices);
+                                                    const maxPrice = Math.max(...data.prices);
+                                                    const priceStr = data.prices.length === 0 ? '-' : minPrice === maxPrice ? `$ ${minPrice.toFixed(2)}` : `$ ${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}`;
+
+                                                    return (
+                                                        <div key={idx} style={{ padding: '12px 16px', borderBottom: '1px solid #dfe3e8', display: 'flex', alignItems: 'center' }}>
+                                                            <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                <div style={{ width: 40, height: 40, background: '#fff', border: '1px solid #dfe3e8', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                    <div style={{ color: '#005bd3' }}>
+                                                                        <Leaf size={16} />
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <Text variant="bodyMd" fontWeight="semibold">{size}</Text>
+                                                                    <Text tone="subdued" variant="bodySm">{data.variants.length} variant{data.variants.length > 1 ? 's' : ''}</Text>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ flex: 2 }}>
+                                                                <div style={{ border: '1px solid #8c9196', padding: '4px 12px', borderRadius: '4px', display: 'inline-block', background: '#fff' }}>
+                                                                    <Text variant="bodyMd">{priceStr}</Text>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ flex: 1 }}>
+                                                                <Text variant="bodyMd">{data.totalAvailable}</Text>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                                <div style={{ background: '#f9fafb', padding: '12px 16px' }}>
+                                                    <Text tone="subdued" variant="bodySm">Total inventory across all locations: {inventoryTotal} available</Text>
+                                                </div>
+                                            </div>
+                                        )}
                                     </ResourceItem>
                                 );
                             }}
-                        />
-                    </div>
-                </Card>
-            </BlockStack>
-
-            <Modal
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                title="Pot Mapping Setup"
-                primaryAction={{ content: 'Finish Setup', onAction: handleSave }}
-                secondaryActions={[{ content: 'Cancel', onAction: () => setModalOpen(false) }]}
-                large
-            >
-                <Modal.Section>
-                    <FormLayout>
-                        <Banner tone="info">
-                            Assign each Shopify variant to a Pot Size (Small, Medium, etc) to ensure inventory tracking works correctly.
-                        </Banner>
-
-                        <InlineStack gap="400">
-                            <div style={{ flex: 2 }}>
-                                <TextField label="Product Display Title" value={formData.product_title} onChange={(value) => setFormData({ ...formData, product_title: value })} autoComplete="off" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <TextField label="Bare-Root Discount" value={formData.no_pot_discount} onChange={(value) => setFormData({ ...formData, no_pot_discount: value })} type="number" prefix="$" />
-                            </div>
-                        </InlineStack>
-
-                        <Divider />
-                        <Text variant="headingMd">Variant-to-Pot Mapping</Text>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                            {(formData.size_mappings || []).map((mapping, index) => (
-
-                                <Box key={index} padding="300" background="bg-surface-secondary" borderRadius="200" borderStyle="solid" borderWidth="025" borderColor="border-subdued">
-                                    <BlockStack gap="300">
-                                        <BlockStack gap="050">
-                                            <Text fontWeight="bold" variant="bodySm">{mapping.variant_title}</Text>
-                                            <Text tone="subdued" variant="bodyXs">SKU: {mapping.shopify_variant_id}</Text>
-                                        </BlockStack>
-                                        <InlineStack gap="300" align="stretch">
-                                            <div style={{ flex: 1.5 }}>
-                                                <Select
-                                                    label="Maps to size:"
-                                                    options={[
-                                                        { label: 'Small', value: 'Small' },
-                                                        { label: 'Medium', value: 'Medium' },
-                                                        { label: 'Large', value: 'Large' },
-                                                        { label: 'Extra Large', value: 'Extra Large' }
-                                                    ]}
-                                                    value={mapping.pot_size}
-                                                    onChange={(v) => {
-                                                        const updated = [...formData.size_mappings];
-                                                        updated[index].pot_size = v;
-                                                        setFormData({ ...formData, size_mappings: updated });
-                                                    }}
-                                                />
-                                            </div>
-                                            <div style={{ flex: 1 }}>
-                                                <TextField
-                                                    label="Price:"
-                                                    value={mapping.price}
-                                                    onChange={(v) => {
-                                                        const updated = [...formData.size_mappings];
-                                                        updated[index].price = v;
-                                                        setFormData({ ...formData, size_mappings: updated });
-                                                    }}
-                                                    prefix="$"
-                                                    type="number"
-                                                    autoComplete="off"
-                                                />
-                                            </div>
-                                        </InlineStack>
-                                    </BlockStack>
-                                </Box>
-                            ))}
-                        </div>
-                    </FormLayout>
-                </Modal.Section>
-            </Modal>
-
-            <Modal
-                open={generateModalOpen}
-                onClose={() => setGenerateModalOpen(false)}
-                title={`Generate Bundle Variants for ${generateData.product_title}`}
-                primaryAction={{ content: 'Generate & Push to Shopify', onAction: handleGenerateSubmit, loading: actionLoading === 'generating' }}
-                secondaryActions={[{ content: 'Cancel', onAction: () => setGenerateModalOpen(false) }]}
-            >
-                <Modal.Section>
-                    <FormLayout>
-                        <Banner tone="info">
-                            This will create a Size and Color grid directly in Shopify, replacing any existing variants. Perfect for fresh setups.
-                        </Banner>
-                        <Text variant="headingSm">Sizes, Prices & Inventory</Text>
-                        <BlockStack gap="300">
-                            {Array.isArray(generateData.sizes) && generateData.sizes.map((size, idx) => (
-                                <InlineStack key={idx} gap="300" blockAlign="center">
-                                    <div style={{ flex: 2 }}>
-                                        <TextField
-                                            label="Size Name" labelHidden
-                                            placeholder='e.g. 4" Pot'
-                                            value={size.name}
-                                            onChange={v => {
-                                                const s = [...generateData.sizes];
-                                                s[idx].name = v;
-                                                setGenerateData({ ...generateData, sizes: s });
-                                            }}
-                                        />
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <TextField
-                                            label="Price" labelHidden
-                                            prefix="$"
-                                            value={size.price}
-                                            onChange={v => {
-                                                const s = [...generateData.sizes];
-                                                s[idx].price = v;
-                                                setGenerateData({ ...generateData, sizes: s });
-                                            }}
-                                        />
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <TextField
-                                            label="Initial Inventory" labelHidden
-                                            type="number"
-                                            value={size.inventory}
-                                            onChange={v => {
-                                                const s = [...generateData.sizes];
-                                                s[idx].inventory = v;
-                                                setGenerateData({ ...generateData, sizes: s });
-                                            }}
-                                        />
-                                    </div>
-                                    <Button tone="critical" onClick={() => {
-                                        const s = generateData.sizes.filter((_, i) => i !== idx);
-                                        setGenerateData({ ...generateData, sizes: s });
-                                    }}>Remove</Button>
-                                </InlineStack>
-                            ))}
-                            <Button onClick={() => {
-                                setGenerateData({ ...generateData, sizes: [...generateData.sizes, { name: '', price: '29.99', inventory: '100' }] });
-                            }}>+ Add Another Size</Button>
-                        </BlockStack>
-
-                        <Divider />
-
-                        <Text variant="headingSm">Include Colors:</Text>
-
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                            {availableColors.map(c => (
-                                <Badge
-                                    key={c.id}
-                                    tone={generateData.colors.includes(c.name) ? "success" : "new"}
-                                    progress={generateData.colors.includes(c.name) ? "complete" : "incomplete"}
-                                    onClick={() => {
-                                        const prev = generateData.colors;
-                                        const upd = prev.includes(c.name) ? prev.filter(x => x !== c.name) : [...prev, c.name];
-                                        setGenerateData({ ...generateData, colors: upd });
-                                    }}
+                            emptyState={(
+                                <EmptyState
+                                    heading="No Bundles Configured"
+                                    image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                                 >
-                                    <span style={{ cursor: 'pointer' }}>{c.name} {generateData.colors.includes(c.name) && "✓"}</span>
-                                </Badge>
-                            ))}
+                                    <p>Pick a product from the Shopify list below to get started.</p>
+                                </EmptyState>
+                            )}
+                        />
+                    </Card>
+
+                    <Card padding="0">
+                        <Box padding="400">
+                            <BlockStack gap="400">
+                                <InlineStack gap="200" align="start" blockAlign="center">
+                                    <SettingsIcon style={{ width: 20 }} />
+                                    <Text variant="headingMd">Available from Shopify</Text>
+                                </InlineStack>
+                                <TextField
+                                    prefix={<SearchIcon style={{ width: 18 }} />}
+                                    placeholder="Find products to connect..."
+                                    value={searchQuery}
+                                    onChange={setSearchQuery}
+                                    autoComplete="off"
+                                    clearButton
+                                    onClearButtonClick={() => setSearchQuery('')}
+                                />
+                            </BlockStack>
+                        </Box>
+                        <Divider />
+                        <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                            <ResourceList
+                                items={unconfiguredProducts}
+                                loading={syncLoading}
+                                renderItem={(product) => {
+                                    const inventoryTotal = (product.variants || []).reduce((sum, v) => sum + (v.inventory_quantity || 0), 0);
+                                    return (
+                                        <ResourceItem
+                                            id={product.id.toString()}
+                                            onClick={() => handleConfigSelect(product)}
+                                            verticalAlignment="center"
+                                        >
+                                            <InlineStack align="space-between" blockAlign="center">
+                                                <InlineStack gap="400" blockAlign="center">
+                                                    <Thumbnail source={product.image?.src || 'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png'} alt={product.title} size="medium" />
+                                                    <BlockStack>
+                                                        <Text variant="bodyMd" fontWeight="bold">{product.title}</Text>
+                                                        <Text tone="subdued" variant="bodySm">{(product.variants || []).length} variants available</Text>
+                                                        <Text tone="subdued" variant="bodySm">Total inventory across all locations: {inventoryTotal} available</Text>
+                                                    </BlockStack>
+                                                </InlineStack>
+                                                <InlineStack gap="200">
+                                                    <Button onClick={() => handleGenerateOpen(product)}>Insta-Build Variants</Button>
+                                                    <Button variant="primary" onClick={() => handleConfigSelect(product)}>Configure</Button>
+                                                </InlineStack>
+                                            </InlineStack>
+
+                                        </ResourceItem>
+                                    );
+                                }}
+                            />
                         </div>
-                    </FormLayout>
-                </Modal.Section>
-            </Modal>
-            {toastMsg && (
-                <Toast
-                    content={toastMsg.content}
-                    onDismiss={() => setToastMsg(null)}
-                    error={toastMsg.status === 'critical'}
-                />
-            )}
-        </Page>
+                    </Card>
+                </BlockStack>
+
+                <Modal
+                    open={modalOpen}
+                    onClose={() => setModalOpen(false)}
+                    title="Pot Mapping Setup"
+                    primaryAction={{ content: 'Finish Setup', onAction: handleSave }}
+                    secondaryActions={[{ content: 'Cancel', onAction: () => setModalOpen(false) }]}
+                    large
+                >
+                    <Modal.Section>
+                        <FormLayout>
+                            <Banner tone="info">
+                                Assign each Shopify variant to a Pot Size (Small, Medium, etc) to ensure inventory tracking works correctly.
+                            </Banner>
+
+                            <InlineStack gap="400">
+                                <div style={{ flex: 2 }}>
+                                    <TextField label="Product Display Title" value={formData.product_title} onChange={(value) => setFormData({ ...formData, product_title: value })} autoComplete="off" />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                    <TextField label="Bare-Root Discount" value={formData.no_pot_discount} onChange={(value) => setFormData({ ...formData, no_pot_discount: value })} type="number" prefix="$" />
+                                </div>
+                            </InlineStack>
+
+                            <Divider />
+                            <Text variant="headingMd">Variant-to-Pot Mapping</Text>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                                {(formData.size_mappings || []).map((mapping, index) => (
+
+                                    <Box key={index} padding="300" background="bg-surface-secondary" borderRadius="200" borderStyle="solid" borderWidth="025" borderColor="border-subdued">
+                                        <BlockStack gap="300">
+                                            <BlockStack gap="050">
+                                                <Text fontWeight="bold" variant="bodySm">{mapping.variant_title}</Text>
+                                                <Text tone="subdued" variant="bodyXs">SKU: {mapping.shopify_variant_id}</Text>
+                                            </BlockStack>
+                                            <InlineStack gap="300" align="stretch">
+                                                <div style={{ flex: 1.5 }}>
+                                                    <Select
+                                                        label="Maps to size:"
+                                                        options={[
+                                                            { label: 'Small', value: 'Small' },
+                                                            { label: 'Medium', value: 'Medium' },
+                                                            { label: 'Large', value: 'Large' },
+                                                            { label: 'Extra Large', value: 'Extra Large' }
+                                                        ]}
+                                                        value={mapping.pot_size}
+                                                        onChange={(v) => {
+                                                            const updated = [...formData.size_mappings];
+                                                            updated[index].pot_size = v;
+                                                            setFormData({ ...formData, size_mappings: updated });
+                                                        }}
+                                                    />
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <TextField
+                                                        label="Price:"
+                                                        value={mapping.price}
+                                                        onChange={(v) => {
+                                                            const updated = [...formData.size_mappings];
+                                                            updated[index].price = v;
+                                                            setFormData({ ...formData, size_mappings: updated });
+                                                        }}
+                                                        prefix="$"
+                                                        type="number"
+                                                        autoComplete="off"
+                                                    />
+                                                </div>
+                                            </InlineStack>
+                                        </BlockStack>
+                                    </Box>
+                                ))}
+                            </div>
+                        </FormLayout>
+                    </Modal.Section>
+                </Modal>
+
+                <Modal
+                    open={generateModalOpen}
+                    onClose={() => setGenerateModalOpen(false)}
+                    title={`Generate Bundle Variants for ${generateData.product_title}`}
+                    primaryAction={{ content: 'Generate & Push to Shopify', onAction: handleGenerateSubmit, loading: actionLoading === 'generating' }}
+                    secondaryActions={[{ content: 'Cancel', onAction: () => setGenerateModalOpen(false) }]}
+                >
+                    <Modal.Section>
+                        <FormLayout>
+                            <Banner tone="info">
+                                This will create a Size and Color grid directly in Shopify, replacing any existing variants. Perfect for fresh setups.
+                            </Banner>
+                            <Text variant="headingSm">Sizes, Prices & Inventory</Text>
+                            <BlockStack gap="300">
+                                {Array.isArray(generateData.sizes) && generateData.sizes.map((size, idx) => (
+                                    <InlineStack key={idx} gap="300" blockAlign="center">
+                                        <div style={{ flex: 2 }}>
+                                            <TextField
+                                                label="Size Name" labelHidden
+                                                placeholder='e.g. 4" Pot'
+                                                value={size.name}
+                                                onChange={v => {
+                                                    const s = [...generateData.sizes];
+                                                    s[idx].name = v;
+                                                    setGenerateData({ ...generateData, sizes: s });
+                                                }}
+                                            />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <TextField
+                                                label="Price" labelHidden
+                                                prefix="$"
+                                                value={size.price}
+                                                onChange={v => {
+                                                    const s = [...generateData.sizes];
+                                                    s[idx].price = v;
+                                                    setGenerateData({ ...generateData, sizes: s });
+                                                }}
+                                            />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <TextField
+                                                label="Initial Inventory" labelHidden
+                                                type="number"
+                                                value={size.inventory}
+                                                onChange={v => {
+                                                    const s = [...generateData.sizes];
+                                                    s[idx].inventory = v;
+                                                    setGenerateData({ ...generateData, sizes: s });
+                                                }}
+                                            />
+                                        </div>
+                                        <Button tone="critical" onClick={() => {
+                                            const s = generateData.sizes.filter((_, i) => i !== idx);
+                                            setGenerateData({ ...generateData, sizes: s });
+                                        }}>Remove</Button>
+                                    </InlineStack>
+                                ))}
+                                <Button onClick={() => {
+                                    setGenerateData({ ...generateData, sizes: [...generateData.sizes, { name: '', price: '29.99', inventory: '100' }] });
+                                }}>+ Add Another Size</Button>
+                            </BlockStack>
+
+                            <Divider />
+
+                            <Text variant="headingSm">Include Colors:</Text>
+
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {availableColors.map(c => (
+                                    <Badge
+                                        key={c.id}
+                                        tone={generateData.colors.includes(c.name) ? "success" : "new"}
+                                        progress={generateData.colors.includes(c.name) ? "complete" : "incomplete"}
+                                        onClick={() => {
+                                            const prev = generateData.colors;
+                                            const upd = prev.includes(c.name) ? prev.filter(x => x !== c.name) : [...prev, c.name];
+                                            setGenerateData({ ...generateData, colors: upd });
+                                        }}
+                                    >
+                                        <span style={{ cursor: 'pointer' }}>{c.name} {generateData.colors.includes(c.name) && "✓"}</span>
+                                    </Badge>
+                                ))}
+                            </div>
+                        </FormLayout>
+                    </Modal.Section>
+                </Modal>
+                {toastMsg && (
+                    <Toast
+                        content={toastMsg.content}
+                        onDismiss={() => setToastMsg(null)}
+                        error={toastMsg.status === 'critical'}
+                    />
+                )}
+            </Page>
         </Frame>
 
     );

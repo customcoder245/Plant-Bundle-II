@@ -429,4 +429,32 @@ async function syncPotsFromShopify() {
     };
 }
 
-module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify, getShopifyLocationId };
+/**
+ * syncAllBundlesToShopify - Pushes EVERYTHING from our DB to Shopify.
+ * Reverses the logic of syncPotsFromShopify: Our DB -> Shopify.
+ */
+async function syncAllBundlesToShopify() {
+    const potsRes = await pool.query(`
+        SELECT pi.pot_color_id, pi.size, pi.quantity, pc.name as color_name 
+        FROM pot_inventory pi
+        JOIN pot_colors pc ON pi.pot_color_id = pc.id
+    `);
+    const pots = potsRes.rows;
+
+    console.log(`[PUSH] Starting global sync of ${pots.length} pots to Shopify...`);
+    let totalUpdated = 0;
+
+    for (const pot of pots) {
+        try {
+            // We reuse the existing sync logic which identifies all linked products for this specific pot
+            await syncPotInventoryToShopify(pot.pot_color_id, pot.size, pot.quantity);
+            totalUpdated++;
+        } catch (e) {
+            console.error(`[PUSH] Failed to sync ${pot.color_name} ${pot.size}:`, e.message);
+        }
+    }
+
+    return { success: true, potTypesSynced: totalUpdated };
+}
+
+module.exports = { processOrder, syncPotInventoryToShopify, syncPotsFromShopify, syncAllBundlesToShopify, getShopifyLocationId };

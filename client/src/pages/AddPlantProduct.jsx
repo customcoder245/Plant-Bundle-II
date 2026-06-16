@@ -904,14 +904,17 @@ function CreateNewProduct({ editId }) {
                 const invData = await invRes.json();
                 const colorsData = await colorsRes.json();
 
-                setPotInventory(invData);
-                setPotColors(colorsData);
+                const safeInv = Array.isArray(invData) ? invData : [];
+                const safeColors = Array.isArray(colorsData) ? colorsData : [];
+
+                setPotInventory(safeInv);
+                setPotColors(safeColors);
                 setInventoryLoaded(true);
 
                 // Update default options based on fetched data if not in edit mode
                 if (!editId) {
-                    const uniqueSizes = [...new Set(invData.map(p => p.size))];
-                    const activeColors = colorsData.filter(c => c.is_active !== false).map(c => c.name);
+                    const uniqueSizes = [...new Set(safeInv.map(p => p.size))];
+                    const activeColors = safeColors.filter(c => c.is_active !== false).map(c => c.name);
 
                     setOptions([
                         { name: 'Size', values: uniqueSizes.length > 0 ? uniqueSizes : ['4" Pot', '6" Pot', '8" Pot'] },
@@ -977,7 +980,7 @@ function CreateNewProduct({ editId }) {
         // Function to find available pot quantity with robust matching
         const getPotAvailable = (size, color, noPot) => {
             if (noPot === 'Without Pot') return 1000;
-            const match = potInventory.find(p =>
+            const match = (potInventory || []).find(p =>
                 normalize(p.size) === normalize(size) &&
                 normalize(p.color_name) === normalize(color)
             );
@@ -1263,7 +1266,7 @@ function CreateNewProduct({ editId }) {
             }
 
             // Enrich variant CLONE with pot data for direct sync (avoiding mutation)
-            const potMatch = potInventory.find(p =>
+            const potMatch = (potInventory || []).find(p =>
                 normalize(p.size) === normalize(size) &&
                 normalize(p.color_name) === normalize(v.option2)
             );
@@ -1338,7 +1341,7 @@ function CreateNewProduct({ editId }) {
 
     // Delete a specific variant
     const handleDeleteVariant = (variantTitle) => {
-        const variant = variants.find(v => v.title === variantTitle);
+        const variant = (variants || []).find(v => v.title === variantTitle);
         if (variant && variant.id) {
             // Track Shopify variant ID for deletion on save
             deletedVariantIdsRef.current.push(variant.id);
@@ -1391,9 +1394,9 @@ function CreateNewProduct({ editId }) {
             if (matches) {
                 let finalQty = parseInt(val) || 0;
                 if (v.option3 === 'With Pot') {
-                    const potStock = potInventory.find(p =>
-                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
-                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                    const potStock = (potInventory || []).find(p =>
+                        p.size && v.option1 && normalize(p.size) === normalize(v.option1) &&
+                        p.color_name && v.option2 && normalize(p.color_name) === normalize(v.option2)
                     )?.quantity || 0;
 
                     if (finalQty > potStock) {
