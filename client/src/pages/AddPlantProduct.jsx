@@ -1278,36 +1278,20 @@ function CreateNewProduct({ editId }) {
         });
 
         return Object.values(sizeGroups).map(s => {
-            // Build color sub-groups for inventory matching
-            s.variants.forEach(v => {
-                const color = (v.option2 || '').trim();
-                if (color === 'N/A' || !color) return;
-
-                if (!s.colors[color]) {
-                    const potMatch = potInventory.find(p =>
-                        normalize(p.size) === normalize(s.title) &&
-                        normalize(p.color_name) === normalize(color)
-                    );
-                    s.colors[color] = {
-                        name: color,
-                        potStock: potMatch ? (parseInt(potMatch.quantity) || 0) : 0,
-                        potId: potMatch?.id,
-                        isSynced: !!potMatch,
-                    };
-                }
-            });
-
-            const colorList = Object.values(s.colors);
-            const totalPotStock = colorList.reduce((sum, c) => sum + c.potStock, 0);
             const prices = s.variants.map(v => parseFloat(v.price) || 0);
             const priceMin = prices.length > 0 ? Math.min(...prices).toFixed(2) : '0.00';
             const priceMax = prices.length > 0 ? Math.max(...prices).toFixed(2) : '0.00';
 
+            // Calculate live available quantity by summing variant inventories (Shopify numbers)
+            const liveAvailable = s.variants.reduce((sum, v) => {
+                if (v.option3 === 'Without Pot') return sum;
+                return sum + (parseInt(v.inventory_quantity) || 0);
+            }, 0);
+
             return {
                 title: s.title,
                 items: s.variants,
-                available: totalPotStock,
-                subGroups: colorList,
+                available: liveAvailable,
                 priceDisplay: priceMin === priceMax ? `$ ${priceMin}` : `$ ${priceMin} - ${priceMax}`,
             };
         });
@@ -1538,7 +1522,10 @@ function CreateNewProduct({ editId }) {
         }
     };
 
-    const totalAvailable = variants.reduce((acc, curr) => acc + (parseInt(curr.inventory_quantity) || 0), 0);
+    const totalAvailable = variants.reduce((acc, curr) => {
+        if (curr.option3 === 'Without Pot') return acc;
+        return acc + (parseInt(curr.inventory_quantity) || 0)
+    }, 0);
 
     // Render detailed editor sub-page if a variant is selected
     if (editingVariantIndex !== null) {

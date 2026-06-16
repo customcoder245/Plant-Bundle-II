@@ -216,7 +216,7 @@ function PotStockTab() {
                                                     type="number" label="In Stock" labelHidden
                                                     value={(editedQuantities[item.id] !== undefined ? editedQuantities[item.id] : item.quantity).toString()}
                                                     onChange={(val) => handleQuantityChange(item.id, val)}
-                                                    autoComplete="off" suffix="Units" align="right"
+                                                    autoComplete="off" align="right"
                                                 />
                                             </div>
                                             <div style={{ minWidth: '100px', textAlign: 'right' }}>

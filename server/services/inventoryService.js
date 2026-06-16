@@ -256,7 +256,14 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                     matchColor(colorName, attr)
                 );
 
-                if (isSizeMatch && isColorMatch) {
+                // EXCLUSION: If the variant is a "Without Pot" or "Bare Root" option, do NOT sync pot inventory to it.
+                // We identify this by checking all options and the title for "without", "bare", or "none".
+                const isNoPot = variantAttributes.some(attr => {
+                    const norm = normalize(attr);
+                    return norm.includes('without') || norm.includes('bare') || norm === 'none' || norm === 'na';
+                });
+
+                if (isSizeMatch && isColorMatch && !isNoPot) {
                     console.log(`[SYNC] SUCCESS! Found Match for Color:${colorName}, Size:${size} in Variant: "${variant.title}" (ID: ${variant.id})`);
 
                     // 1. Ensure tracking is turned ON for this item
