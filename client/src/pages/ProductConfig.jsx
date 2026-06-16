@@ -202,7 +202,7 @@ function ProductConfig() {
         }
     };
 
-    const configuredIds = (Array.isArray(configs) ? configs : []).map(c => c.shopify_product_id.toString());
+    const configuredIds = (Array.isArray(configs) ? configs : []).map(c => c.shopify_product_id ? c.shopify_product_id.toString() : '');
     const unconfiguredProducts = (Array.isArray(shopifyProducts) ? shopifyProducts : []).filter(p =>
         !configuredIds.includes(p.id?.toString()) &&
         (p.title || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -231,13 +231,14 @@ function ProductConfig() {
                             resourceName={{ singular: 'bundle', plural: 'bundles' }}
                             renderItem={(config) => {
                                 const shopifyProduct = (shopifyProducts || []).find(p => p.id && config.shopify_product_id && p.id.toString() === config.shopify_product_id.toString());
+                                const shopifyVariants = shopifyProduct?.variants || [];
                                 const imageUrl = shopifyProduct?.image?.src || "";
-                                const inventoryTotal = (shopifyProduct?.variants || []).reduce((sum, v) => sum + (parseInt(v.inventory_quantity) || 0), 0);
+                                const inventoryTotal = shopifyVariants.reduce((sum, v) => sum + (parseInt(v.inventory_quantity) || 0), 0);
 
                                 const groups = {};
-                                const hasVariants = (shopifyProduct?.variants || []).length > 0;
+                                const hasVariants = shopifyVariants.length > 0;
                                 if (hasVariants) {
-                                    shopifyProduct.variants.forEach(v => {
+                                    shopifyVariants.forEach(v => {
                                         const mapping = (config.size_mappings || []).find(m => m.shopify_variant_id && v.id && m.shopify_variant_id.toString() === v.id.toString());
                                         const sizeName = v.option1 || (mapping ? mapping.pot_size : 'Unmapped');
                                         if (!groups[sizeName]) {
@@ -261,7 +262,7 @@ function ProductConfig() {
                                                             {config.is_enabled ? 'Active' : 'Disabled'}
                                                         </Badge>
                                                         <Text tone="subdued" variant="bodySm">{(config.size_mappings || []).length} Sizes mapped</Text>
-                                                        <Text tone="subdued" variant="bodySm">{hasVariants ? shopifyProduct.variants.length : 0} Shopify Variants</Text>
+                                                        <Text tone="subdued" variant="bodySm">{shopifyVariants.length} Shopify Variants</Text>
                                                     </InlineStack>
                                                 </BlockStack>
                                             </InlineStack>
