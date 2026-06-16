@@ -866,6 +866,24 @@ function CreateNewProduct({ editId }) {
     // Defaulting to Size / Pot Color as it is most logical for inventory
     const [groupBy, setGroupBy] = useState('Size / Pot Color');
     const [expandedGroups, setExpandedGroups] = useState(new Set());
+    const [selectedVariants, setSelectedVariants] = useState([]);
+    const [selectedOptions, setSelectedOptions] = useState([]);
+
+    const handleSelectGroup = (group) => {
+        const itemIds = group.items.map(v => v.id || v.title);
+        const allSelected = itemIds.every(id => selectedVariants.includes(id));
+        if (allSelected) {
+            setSelectedVariants(prev => prev.filter(id => !itemIds.includes(id)));
+        } else {
+            setSelectedVariants(prev => [...new Set([...prev, ...itemIds])]);
+        }
+    };
+
+    const handleSelectVariant = (id) => {
+        setSelectedVariants(prev =>
+            prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
+        );
+    };
 
     // Fetch product details if editing
     useEffect(() => {
