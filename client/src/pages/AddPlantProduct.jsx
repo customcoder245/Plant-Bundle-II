@@ -933,7 +933,25 @@ function CreateNewProduct({ editId }) {
         // Wait for inventory data to avoid setting 0 quantities erroneously
         if (!inventoryLoaded && !editId) return;
 
-        const combos = generateCombinations(options);
+        const rawCombos = generateCombinations(options);
+
+        // DEDUPLICATION LOGIC: 
+        // If "Without Pot" is selected, the color is irrelevant. 
+        // We force color to "N/A" and skip duplicates to keep the list clean.
+        const seenWithoutPot = new Set();
+        const combos = rawCombos.filter(combo => {
+            const size = combo[0]?.value || '';
+            const color = combo[1]?.value || '';
+            const noPot = combo[2]?.value || '';
+
+            if (noPot === 'Without Pot') {
+                if (seenWithoutPot.has(size)) return false;
+                seenWithoutPot.add(size);
+                // Force color to N/A for the chosen one
+                combo[1].value = 'N/A';
+            }
+            return true;
+        });
 
         // Function to find available pot quantity
         const getPotAvailable = (size, color, noPot) => {
@@ -1203,10 +1221,15 @@ function CreateNewProduct({ editId }) {
                 // Find physical pot inventory for this group if possible
                 let potStock = null;
                 if (groupBy === 'Size / Pot Color') {
-                    potStock = potInventory.find(p =>
-                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
-                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
-                    )?.quantity;
+                    // Only find pot stock if it's not an N/A color
+                    if (v.option2 !== 'N/A') {
+                        potStock = potInventory.find(p =>
+                            p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
+                            p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                        )?.quantity;
+                    } else {
+                        potStock = null; // No pot involved
+                    }
                 }
 
                 groups[key] = {
