@@ -653,12 +653,14 @@ function DetailedVariantDetailsEditor({
                                                 <Text variant="bodyMd">Planet Desert</Text>
                                                 <div style={{ width: '120px' }}>
                                                     <TextField
-                                                        label="Quantity"
+                                                        label="Available"
                                                         labelHidden
                                                         type="number"
-                                                        value={quantity}
-                                                        onChange={setQuantity}
+                                                        value={g.available}
+                                                        disabled={!!g.potId}
+                                                        onChange={(value) => handleGroupQtyChange(g, value)}
                                                         autoComplete="off"
+                                                        suffix={g.potId ? <Tooltip content="Locked: Synced with Pot Inventory"><Icon source="LockFilledIcon" tone="subdued" /></Tooltip> : null}
                                                     />
                                                 </div>
                                             </div>
@@ -1273,7 +1275,8 @@ function CreateNewProduct({ editId }) {
                 ...g,
                 priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
                 qtyDisplay: qtyDisplay,
-                available: g.totalInventory
+                // If synced with pots, the available count IS the pot stock
+                available: (g.potId && g.potStock !== null) ? g.potStock : g.totalInventory
             };
         });
     };
@@ -1405,9 +1408,21 @@ function CreateNewProduct({ editId }) {
             });
 
             if (res.ok) {
-                // Refresh local pot inventory state
+                // 1. Refresh local pot inventory state
                 const updatedInv = potInventory.map(p => p.id === potId ? { ...p, quantity: parseInt(newQty) } : p);
                 setPotInventory(updatedInv);
+
+                // 2. Automatically update variant quantities to match new pot stock
+                const updatedQty = parseInt(newQty);
+                setVariants(prev => prev.map(v => {
+                    const isMatch = (v.option1 || '').trim().toLowerCase() === updatedInv.find(p => p.id === potId)?.size.toLowerCase().trim() &&
+                        (v.option2 || '').trim().toLowerCase() === updatedInv.find(p => p.id === potId)?.color_name.toLowerCase().trim();
+                    if (isMatch) {
+                        return { ...v, inventory_quantity: updatedQty };
+                    }
+                    return v;
+                }));
+
                 setMsg({ text: 'Pot inventory updated and synced successfully.', type: 'success' });
                 setTimeout(() => setMsg({ text: '', type: '' }), 3000);
             }
