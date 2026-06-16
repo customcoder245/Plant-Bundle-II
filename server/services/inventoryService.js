@@ -53,7 +53,7 @@ async function processOrder(order, action = 'deduct') {
             }
 
             // 3. Handle "NO POT" or "Bare Root"
-            if (['NO POT', 'BARE ROOT', 'NONE'].includes(potValue.toUpperCase())) {
+            if (['NO POT', 'BARE ROOT', 'NONE', 'N/A', 'WITHOUT POT'].includes(potValue.toUpperCase())) {
                 console.log(`User selected "${potValue}" for ${lineItem.title}. No inventory deduction needed.`);
                 continue;
             }
@@ -127,7 +127,7 @@ async function processOrder(order, action = 'deduct') {
 
         // Trigger Shopify variant sync in background after successful commit
         for (const job of syncJobs) {
-            syncPotInventoryToShopify(job.potColorId, job.potSize, job.quantity).catch(err => 
+            syncPotInventoryToShopify(job.potColorId, job.potSize, job.quantity).catch(err =>
                 console.error(`Failed to background sync pot ${job.potColorId} ${job.potSize} to Shopify:`, err)
             );
         }
@@ -233,10 +233,10 @@ async function syncPotInventoryToShopify(potColorId, size, quantity) {
                 if (!mapping) continue;
 
                 const isSizeMatch = mapping.pot_size.toLowerCase().trim() === size.toLowerCase().trim() ||
-                                   (variant.option1 && variant.option1.toLowerCase().trim() === size.toLowerCase().trim());
+                    (variant.option1 && variant.option1.toLowerCase().trim() === size.toLowerCase().trim());
 
                 const isColorMatch = (variant.option2 && matchColor(colorName, variant.option2)) ||
-                                     (variant.title && matchColor(colorName, variant.title));
+                    (variant.title && matchColor(colorName, variant.title));
 
                 if (isSizeMatch && isColorMatch) {
                     console.log(`Syncing Shopify variant ${shopifyProduct.title} - ${variant.title} (ID: ${variant.id}) to ${quantity}`);

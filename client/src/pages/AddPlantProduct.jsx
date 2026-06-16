@@ -1224,20 +1224,24 @@ function CreateNewProduct({ editId }) {
     const getGroupedVariants = () => {
         const groups = {};
         variants.forEach(v => {
-            let key = v.option1; // Size
-            if (groupBy === 'Pot Color') key = v.option2;
-            else if (groupBy === 'No Pot Option') key = v.option3;
-            else if (groupBy === 'Size / Pot Color') key = `${v.option1} / ${v.option2}`;
+            const opt1 = (v.option1 || '').trim();
+            const opt2 = (v.option2 || '').trim();
+            const opt3 = (v.option3 || '').trim();
+
+            let key = opt1; // Size
+            if (groupBy === 'Pot Color') key = opt2;
+            else if (groupBy === 'No Pot Option') key = opt3;
+            else if (groupBy === 'Size / Pot Color') key = `${opt1} / ${opt2}`;
 
             if (!groups[key]) {
                 // Find physical pot inventory for this group if possible
                 let potData = null;
                 if (groupBy === 'Size / Pot Color') {
-                    // Only find pot stock if it's not an N/A color
-                    if (v.option2 !== 'N/A') {
+                    // Only find pot stock if it's not an N/A color (case-insensitive)
+                    if (opt2.toUpperCase() !== 'N/A') {
                         potData = potInventory.find(p =>
-                            p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
-                            p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                            (p.size || '').toLowerCase().trim() === opt1.toLowerCase().trim() &&
+                            (p.color_name || '').toLowerCase().trim() === opt2.toLowerCase().trim()
                         );
                     }
                 }
@@ -1664,37 +1668,30 @@ function CreateNewProduct({ editId }) {
                                                             <div style={{ width: '40px', height: '40px', background: '#f4f5f6', border: '1px solid #e1e3e5', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                                                                 <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
-                                                            <BlockStack gap="0">
-                                                                <Text variant="bodyMd" fontWeight="semibold">{g.title}</Text>
-                                                                <InlineStack gap="100" blockAlign="center">
-                                                                    <Text variant="bodySm" tone="subdued">{g.items.length} variants</Text>
+                                                            <BlockStack gap="050">
+                                                                <Text variant="bodyMd" fontWeight="bold">{g.title}</Text>
+                                                                <InlineStack gap="200" blockAlign="center">
+                                                                    <Badge size="small" tone="info">{g.items.length} options</Badge>
                                                                     {g.potId ? (
-                                                                        <>
-                                                                            <Divider vertical />
-                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                                <Text variant="bodySm" tone="subdued">Pots in stock:</Text>
-                                                                                <div style={{ width: '60px' }}>
-                                                                                    <input
-                                                                                        type="number"
-                                                                                        value={g.potStock}
-                                                                                        onChange={(e) => handlePotStockUpdate(g.potId, e.target.value)}
-                                                                                        style={{
-                                                                                            padding: '2px 6px',
-                                                                                            fontSize: '12px',
-                                                                                            border: '1px solid #c4cdd5',
-                                                                                            borderRadius: '4px',
-                                                                                            width: '100%',
-                                                                                            textAlign: 'center'
-                                                                                        }}
-                                                                                    />
-                                                                                </div>
-                                                                            </div>
-                                                                        </>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f2f3', padding: '2px 8px', borderRadius: '12px' }}>
+                                                                            <Text variant="bodySm" tone="subdued">Stock:</Text>
+                                                                            <input
+                                                                                type="number"
+                                                                                value={g.potStock}
+                                                                                onChange={(e) => handlePotStockUpdate(g.potId, e.target.value)}
+                                                                                style={{
+                                                                                    border: 'none',
+                                                                                    background: 'transparent',
+                                                                                    fontSize: '12px',
+                                                                                    width: '40px',
+                                                                                    textAlign: 'center',
+                                                                                    fontWeight: 'bold',
+                                                                                    color: g.potStock < 10 ? '#d82c0d' : '#000'
+                                                                                }}
+                                                                            />
+                                                                        </div>
                                                                     ) : g.title.includes('/') && !g.title.includes('N/A') ? (
-                                                                        <>
-                                                                            <Divider vertical />
-                                                                            <Badge tone="attention">New Combination - No Pot Record</Badge>
-                                                                        </>
+                                                                        <Badge size="small" tone="warning">No Pot Linked</Badge>
                                                                     ) : null}
                                                                 </InlineStack>
                                                             </BlockStack>
