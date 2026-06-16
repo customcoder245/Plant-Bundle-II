@@ -4,7 +4,7 @@ import {
     Page, Layout, Card, FormLayout, TextField, Button,
     InlineStack, Select, BlockStack, Text, Box,
     Divider, Banner, Badge, Tabs, Thumbnail, Spinner,
-    Icon, Tag
+    Icon, Tag, Checkbox, Tooltip
 } from '@shopify/polaris';
 import {
     PlusIcon, DeleteIcon, SearchIcon, RefreshIcon,
@@ -656,14 +656,8 @@ function DetailedVariantDetailsEditor({
                                                         label="Available"
                                                         labelHidden
                                                         type="number"
-                                                        value={g.available}
-                                                        onChange={(value) => {
-                                                            if (g.potId) {
-                                                                handlePotStockUpdate(g.potId, value);
-                                                            } else {
-                                                                handleGroupQtyChange(g, value);
-                                                            }
-                                                        }}
+                                                        value={totalInventorySum}
+                                                        onChange={handleQuantityChange}
                                                         autoComplete="off"
                                                     />
                                                 </div>
@@ -1731,8 +1725,15 @@ function CreateNewProduct({ editId }) {
                                                             <TextField
                                                                 label="Available Qty"
                                                                 labelHidden
-                                                                value={g.qtyDisplay}
-                                                                onChange={(val) => handleGroupQtyChange(g.title, val)}
+                                                                type="number"
+                                                                value={g.available}
+                                                                onChange={(val) => {
+                                                                    if (g.potId) {
+                                                                        handlePotStockUpdate(g.potId, val);
+                                                                    } else {
+                                                                        handleGroupQtyChange(g.title, val);
+                                                                    }
+                                                                }}
                                                                 autoComplete="off"
                                                             />
                                                         </div>
