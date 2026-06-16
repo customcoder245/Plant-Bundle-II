@@ -1017,8 +1017,10 @@ function CreateNewProduct({ editId }) {
                     title: key, pot_size: opt1,
                     price: basePrice.toFixed(2), compare_at_price: '',
                     cost_per_item: '4.87', charge_tax: true, unit_price: '',
-                    inventory_tracked: true, inventory_quantity: String(baseQuantity),
-                    sku: '', barcode: '', inventory_policy: 'deny',
+                    inventory_tracked: true,
+                    inventory_quantity: opt3 === 'Without Pot' ? '0' : String(baseQuantity),
+                    sku: '', barcode: '',
+                    inventory_policy: opt3 === 'Without Pot' ? 'continue' : 'deny',
                     physical_product: true, weight: '1.0', weight_unit: 'lb',
                     package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
                     country_of_origin: '', hs_code: '',
@@ -1073,8 +1075,10 @@ function CreateNewProduct({ editId }) {
                 title: key, pot_size: opt1,
                 price: basePrice.toFixed(2), compare_at_price: '',
                 cost_per_item: '4.87', charge_tax: true, unit_price: '',
-                inventory_tracked: true, inventory_quantity: String(Math.max(0, finalQty)),
-                sku: '', barcode: '', inventory_policy: 'deny',
+                inventory_tracked: true,
+                inventory_quantity: opt3 === 'Without Pot' ? '0' : String(Math.max(0, finalQty)),
+                sku: '', barcode: '',
+                inventory_policy: opt3 === 'Without Pot' ? 'continue' : 'deny',
                 physical_product: true, weight: '1.0', weight_unit: 'lb',
                 package_type: 'Store default • #6 - 12 x 12 x 6 in, 0 lb',
                 country_of_origin: '', hs_code: '',
@@ -1758,19 +1762,31 @@ function CreateNewProduct({ editId }) {
                                                                     />
                                                                 </div>
                                                             </td>
-                                                            {/* Available (qty) input — locked if pot-synced */}
+                                                            {/* Available (qty) input */}
                                                             <td style={{ padding: '10px 16px' }}>
-                                                                <div style={{ width: '80px' }}>
-                                                                    <TextField
-                                                                        label="qty"
-                                                                        labelHidden
-                                                                        type="number"
-                                                                        value={String(colorGroup?.isSynced ? (colorGroup.potStock ?? subItem.inventory_quantity) : subItem.inventory_quantity)}
-                                                                        disabled={!!colorGroup?.isSynced}
-                                                                        onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
-                                                                        autoComplete="off"
-                                                                    />
-                                                                </div>
+                                                                {subItem.option3 === 'Without Pot' ? (
+                                                                    // Without Pot — always 0 displayed; Shopify policy is 'continue' (unlimited)
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                        <div style={{ width: '80px', background: '#f6f6f6', border: '1px solid #e3e3e3', borderRadius: '6px', padding: '7px 12px', textAlign: 'center' }}>
+                                                                            <Text variant="bodySm" tone="subdued">0</Text>
+                                                                        </div>
+                                                                        <div style={{ background: '#e8f5e9', color: '#2e7d32', fontSize: '11px', fontWeight: '600', padding: '2px 7px', borderRadius: '10px', whiteSpace: 'nowrap' }}>
+                                                                            Unlimited
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div style={{ width: '80px' }}>
+                                                                        <TextField
+                                                                            label="qty"
+                                                                            labelHidden
+                                                                            type="number"
+                                                                            value={String(colorGroup?.isSynced ? (colorGroup.potStock ?? subItem.inventory_quantity) : subItem.inventory_quantity)}
+                                                                            disabled={!!colorGroup?.isSynced}
+                                                                            onChange={(val) => handleUpdateVariantDirectly(subItem.title, 'inventory_quantity', val)}
+                                                                            autoComplete="off"
+                                                                        />
+                                                                    </div>
+                                                                )}
                                                             </td>
                                                             {/* Edit icon */}
                                                             <td style={{ padding: '10px 16px', textAlign: 'right' }}>
