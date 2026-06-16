@@ -1058,22 +1058,16 @@ function CreateNewProduct({ editId }) {
             if (existing) return existing;
 
             let basePrice = 29.49;
-            let baseQuantity = 36;
-            if (opt1.includes('6')) { basePrice = 45.49; baseQuantity = 27; }
-            else if (opt1.includes('8')) { basePrice = 71.25; baseQuantity = 77; }
+            if (opt1.includes('6')) basePrice = 45.49;
+            else if (opt1.includes('8')) basePrice = 71.25;
 
             if (opt2 === 'Self Watering') basePrice += 10.00;
             else if (opt2 === 'Teal' || opt2 === 'Light Green') basePrice += 5.00;
             if (opt3 === 'Without Pot') basePrice = Math.max(9.99, basePrice - 10.00);
 
-            let finalQty = opt2 === 'Black' ? baseQuantity + 5 : opt2 === 'Teal' ? baseQuantity - 3 : baseQuantity;
-
-            // Apply Pot Inventory Constraint
+            // Use actual pot inventory — not a hardcoded number
             const potStock = getPotAvailable(opt1, opt2, opt3);
-            if (finalQty > potStock && opt3 === 'With Pot') {
-                finalQty = potStock;
-                cappedAnyCount++;
-            }
+            let finalQty = opt3 === 'Without Pot' ? 0 : potStock;
 
             return {
                 option1: opt1, option2: opt2, option3: opt3,

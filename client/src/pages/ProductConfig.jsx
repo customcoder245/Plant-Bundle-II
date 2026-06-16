@@ -545,7 +545,7 @@ function ProductConfig() {
                             <Text variant="headingSm">Include Colors:</Text>
 
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                {availableColors.map(c => (
+                                {(Array.isArray(availableColors) ? availableColors : []).map(c => (
                                     <Badge
                                         key={c.id}
                                         tone={generateData.colors.includes(c.name) ? "success" : "new"}
