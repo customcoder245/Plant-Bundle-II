@@ -862,7 +862,8 @@ function CreateNewProduct({ editId }) {
     const [editingVariantIndex, setEditingVariantIndex] = useState(null);
 
     // Group By dashboard setting (Image 1)
-    const [groupBy, setGroupBy] = useState('Size');
+    // Defaulting to Size / Pot Color as it is most logical for inventory
+    const [groupBy, setGroupBy] = useState('Size / Pot Color');
     const [expandedGroups, setExpandedGroups] = useState(new Set());
 
     // Fetch product details if editing
@@ -1196,13 +1197,24 @@ function CreateNewProduct({ editId }) {
             let key = v.option1; // Size
             if (groupBy === 'Pot Color') key = v.option2;
             else if (groupBy === 'No Pot Option') key = v.option3;
+            else if (groupBy === 'Size / Pot Color') key = `${v.option1} / ${v.option2}`;
 
             if (!groups[key]) {
+                // Find physical pot inventory for this group if possible
+                let potStock = null;
+                if (groupBy === 'Size / Pot Color') {
+                    potStock = potInventory.find(p =>
+                        p.size.toLowerCase().trim() === v.option1.toLowerCase().trim() &&
+                        p.color_name.toLowerCase().trim() === v.option2.toLowerCase().trim()
+                    )?.quantity;
+                }
+
                 groups[key] = {
                     title: key,
                     items: [],
                     prices: [],
-                    totalInventory: 0
+                    totalInventory: 0,
+                    potStock: potStock
                 };
             }
             groups[key].items.push(v);
@@ -1219,8 +1231,15 @@ function CreateNewProduct({ editId }) {
             const maxQty = Math.max(...qtys);
             const qtyDisplay = minQty === maxQty ? `${minQty}` : `${minQty} - ${maxQty}`;
 
+            // If we have specific pot stock, add it to the display
+            let displayTitle = g.title;
+            if (g.potStock !== null && g.potStock !== undefined) {
+                displayTitle = `${g.title} (${g.potStock} Pots In Stock)`;
+            }
+
             return {
                 ...g,
+                displayTitle,
                 priceDisplay: minPrice === maxPrice ? `$ ${minPrice}` : `$ ${minPrice} - ${maxPrice}`,
                 qtyDisplay: qtyDisplay,
                 available: g.totalInventory
@@ -1553,6 +1572,7 @@ function CreateNewProduct({ editId }) {
                                                 label="Group by"
                                                 labelHidden
                                                 options={[
+                                                    { label: 'Size / Pot Color', value: 'Size / Pot Color' },
                                                     { label: 'Size', value: 'Size' },
                                                     { label: 'Pot Color', value: 'Pot Color' },
                                                     { label: 'No Pot Option', value: 'No Pot Option' }
@@ -1594,7 +1614,7 @@ function CreateNewProduct({ editId }) {
                                                                 <img src="https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=80&h=80&q=80" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Plant" />
                                                             </div>
                                                             <BlockStack gap="0">
-                                                                <Text variant="bodyMd" fontWeight="semibold">{g.title}</Text>
+                                                                <Text variant="bodyMd" fontWeight="semibold">{g.displayTitle}</Text>
                                                                 <Text variant="bodySm" tone="subdued">{g.items.length} variants</Text>
                                                             </BlockStack>
                                                         </InlineStack>
